@@ -57,6 +57,8 @@ public:
           } else {
             prop = VProp::PUB;
           }
+          // record the original param order
+          original_fparams.push_back(varName);
         } else {
           // label all intermediate var as unknown (i.e. not sure if it is
           // masked)
@@ -65,8 +67,7 @@ public:
         // insert into the ST
         auto vi = ValueInfo(varName, VType::Bool, prop, varDecl);
         globalRegion.st[varName] = vi;
-        // record the original param order
-        original_fparams.push_back(vi.name);
+
         llvm::errs() << "ST inserted:" << varName << " " << toString(prop)
                      << "\n";
         varDecl->dump();

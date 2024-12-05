@@ -124,6 +124,9 @@ public:
               ValueInfo rhs)
       : op(op), assignTo(assignTo), lhs(lhs), rhs(rhs) {}
   std::string toString() const {
+    if (op == "=") {
+      return assignTo.name + " = " + lhs.name + ";";
+    }
     if (rhs.isNone()) {
       // Unary op
       return assignTo.name + " = " + op + lhs.name + ";";

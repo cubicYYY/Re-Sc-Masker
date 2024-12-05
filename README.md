@@ -18,12 +18,14 @@ make
 
 Locate in `/input`(original programs) and `/output`(masked programs).
 
-- `minimum.cpp`: functional equivalence verified.
+- `minimum.cpp`: functional equivalence verified
 - `tiny-size.cpp`: about 20 lines
 - `medium-size.cpp`: about 50 lines
 
-## TODOs
+## Issues/TODOs
 
+- Allow multiple uses of a variable!
+- Automatically assign new names for temps
 - More comments!
 - Consistence naming (no more `lowerCamelCase`)
 - Batch handling

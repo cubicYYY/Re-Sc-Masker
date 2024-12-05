@@ -5,65 +5,69 @@
 #include <llvm-16/llvm/Support/raw_ostream.h>
 #include <string_view>
 
+#define DO_SWAP true
+
 class CombinedRegion {
 public:
   CombinedRegion() {}
   // Change type to TrivialMaskedRegion, but there is cyclic independence
   void add(Region &&newRegion) {
-    newRegion.dump(); // Dump the sub-region
     // Extend
     llvm::errs() << "---EXTEND---\n";
-    curRegion.dump();
-    llvm::errs() << "-------new:\n";
-    newRegion.dump();
-    llvm::errs() << "-------start:\n";
-    for (auto &this_inst : newRegion.instructions) {
-      if (curRegion.outputs2xored.find(this_inst.lhs.name) !=
-          curRegion.outputs2xored.end()) {
-        llvm::errs() << "found used:" << this_inst.lhs.name << "\n";
-        // FIXME:
-        // assert(this_inst.rhs.prop == VProp::MASKED ||
-        //  this_inst.rhs.prop == VProp::RND);
-        auto &rnd_to_swap = this_inst.rhs;
-        // The left part is a previous output var: swap the right side
-        // FIXME: faster search! we should locate it in O(1)
-        // Find the corresponding inst. to swap with
-        for (auto &ori_inst : curRegion.instructions) {
-          llvm::errs() << ori_inst.toString() << "\n";
-          if (ori_inst.assignTo != this_inst.lhs) {
-            continue;
+
+    if (DO_SWAP) {
+      for (auto &this_inst : newRegion.instructions) {
+        if (curRegion.outputs2xored.find(this_inst.lhs.name) !=
+            curRegion.outputs2xored.end()) {
+          // The left part is a previous output var: swap the right side
+          llvm::errs() << "found used:" << this_inst.lhs.name << "\n";
+          // FIXME:
+          // assert(this_inst.rhs.prop == VProp::MASKED ||
+          //  this_inst.rhs.prop == VProp::RND);
+          auto &rnd_to_swap = this_inst.rhs;
+          // FIXME: faster search! we should locate it in O(1)
+          // Find the corresponding inst. to swap with
+          for (auto &ori_inst : curRegion.instructions) {
+            llvm::errs() << ori_inst.toString() << "\n";
+            if (ori_inst.assignTo != this_inst.lhs || this_inst.rhs.isNone()) {
+              continue;
+            }
+            if (ori_inst.lhs == curRegion.outputs2xored[this_inst.lhs.name]) {
+              std::swap(rnd_to_swap, ori_inst.lhs);
+              break;
+            }
+            if (ori_inst.rhs == curRegion.outputs2xored[this_inst.lhs.name]) {
+              std::swap(rnd_to_swap, ori_inst.rhs);
+              break;
+            }
           }
-          if (ori_inst.lhs == curRegion.outputs2xored[this_inst.lhs.name]) {
-            std::swap(rnd_to_swap, ori_inst.lhs);
-            break;
+          // can only be swapped once
+          curRegion.outputs2xored.erase(this_inst.lhs.name);
+        } else if (!this_inst.rhs.isNone() &&
+                   curRegion.outputs2xored.find(this_inst.rhs.name) !=
+                       curRegion.outputs2xored.end()) {
+          // The right part is a previous output var: swap the left side
+          // FIXME:
+          // assert(this_inst.lhs.prop == VProp::MASKED ||
+          //        this_inst.lhs.prop == VProp::RND);
+          auto &rnd_to_swap = this_inst.lhs;
+          // FIXME: faster search! we should locate it in O(1)
+          // Find the corresponding inst. to swap with
+          for (auto &ori_inst : curRegion.instructions) {
+            if (ori_inst.assignTo != this_inst.rhs || this_inst.rhs.isNone()) {
+              continue;
+            }
+            if (ori_inst.lhs == curRegion.outputs2xored[this_inst.rhs.name]) {
+              std::swap(rnd_to_swap, ori_inst.lhs);
+              break;
+            }
+            if (ori_inst.rhs == curRegion.outputs2xored[this_inst.rhs.name]) {
+              std::swap(rnd_to_swap, ori_inst.rhs);
+              break;
+            }
           }
-          if (ori_inst.rhs == curRegion.outputs2xored[this_inst.lhs.name]) {
-            std::swap(rnd_to_swap, ori_inst.rhs);
-            break;
-          }
-        }
-        curRegion.outputs2xored.erase(this_inst.lhs.name);
-      } else if (curRegion.outputs2xored.find(this_inst.rhs.name) !=
-                 curRegion.outputs2xored.end()) {
-        // FIXME:
-        // assert(this_inst.lhs.prop == VProp::MASKED ||
-        //        this_inst.lhs.prop == VProp::RND);
-        auto &rnd_to_swap = this_inst.lhs;
-        // The right part is a previous output var: swap the left side
-        // FIXME: faster search! we should locate it in O(1)
-        // Find the corresponding inst. to swap with
-        for (auto &ori_inst : curRegion.instructions) {
-          if (ori_inst.assignTo != this_inst.rhs) {
-            continue;
-          }
-          if (ori_inst.lhs == curRegion.outputs2xored[this_inst.rhs.name]) {
-            std::swap(rnd_to_swap, ori_inst.lhs);
-            break;
-          }
-          if (ori_inst.rhs == curRegion.outputs2xored[this_inst.rhs.name]) {
-            std::swap(rnd_to_swap, ori_inst.rhs);
-            break;
-          }
+          // can only be swapped once
+          curRegion.outputs2xored.erase(this_inst.rhs.name);
         }
       }
     }
