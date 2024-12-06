@@ -108,7 +108,7 @@ namespace std {
 template <> struct hash<ValueInfo> {
   std::size_t operator()(const ValueInfo &v) const {
     if (!v.clangDecl) {
-      return 0;
+      return v.name.length();
     }
     return v.clangDecl->getGlobalID();
   }
@@ -120,6 +120,7 @@ using SymbolTable = std::unordered_map<std::string, ValueInfo>;
 class Instruction {
 public:
   Instruction() {}
+  void dump() const { llvm::errs() << toString() << "\n"; }
   Instruction(std::string_view op, ValueInfo assignTo, ValueInfo lhs,
               ValueInfo rhs)
       : op(op), assignTo(assignTo), lhs(lhs), rhs(rhs) {}
@@ -142,7 +143,6 @@ class Region {
 public:
   Region() {}
 
-  void append(Instruction inst) { instructions.push_back(inst); }
   size_t count() const { return instructions.size(); }
   static const Region end() { return Region(); }
   bool isEnd() { return (count() == 0); }
@@ -160,12 +160,6 @@ public:
       llvm::errs() << "    RHS: " << valueInfoToString(inst.rhs) << "\n";
     }
 
-    // Dump outputs
-    llvm::errs() << "Outputs:\n";
-    for (const auto &output : outputs2xored) {
-      llvm::errs() << "  " << output.first << "\n";
-    }
-
     // Dump symbol table
     llvm::errs() << "Symbol Table:\n";
     for (const auto &entry : st) {
@@ -176,12 +170,15 @@ public:
     }
 
     // Dump the output mapping
-    llvm::errs() << "Output Mapping:\n";
-    for (const auto &pair : outputs2xored) {
-      llvm::errs() << "OVar: " << pair.first
-                   << " -> XORed with: " << pair.second.name;
-      llvm::errs() << "\n";
-    }
+    // llvm::errs() << "Output Mapping:\n";
+    // for (const auto &pair : outputs2xored) {
+    //   llvm::errs() << "OVar: " << pair.first;
+    //   const auto &xor_set = pair.second;
+    //   for (auto xor_var : xor_set) {
+    //     llvm::errs() << xor_var.name << ",";
+    //   }
+    //   llvm::errs() << "\n";
+    // }
 
     llvm::errs() << "Total Instructions: " << count() << "\n";
   }
@@ -201,7 +198,6 @@ private:
 
 public:
   std::vector<Instruction> instructions;
-  std::unordered_map<std::string, ValueInfo> outputs2xored;
   // TODO: make it private
   SymbolTable st;
 };

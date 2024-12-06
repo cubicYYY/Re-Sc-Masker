@@ -1,6 +1,7 @@
 
-#include "CombinedRegion.hpp"
 #include "DataStructures.hpp"
+#include "DefUseRegion.hpp"
+#include "FinalRegion.hpp"
 #include "MaskedRegion.hpp"
 #include "RegionDivider.hpp"
 #include "clang/AST/Decl.h"
@@ -24,6 +25,7 @@ static llvm::cl::OptionCategory toolCategory("Re-SC-Masker <options>");
 // TODO: move inside of the class
 Region globalRegion;
 std::vector<std::string> original_fparams;
+std::string ret_var;
 
 class ScMaskerASTVisitor
     : public clang::RecursiveASTVisitor<ScMaskerASTVisitor> {
@@ -148,7 +150,7 @@ public:
           oprand1->dump();
           oprand2->dump();
           llvm::errs() << "-----BINOP end\n";
-          globalRegion.append(Instruction(
+          globalRegion.instructions.push_back(Instruction(
               clang::BinaryOperator::getOpcodeStr(nestedBinOp->getOpcode())
                   .str(),
               globalRegion.st[assignToRef->getDecl()->getNameAsString()],
@@ -164,7 +166,7 @@ public:
           assert(oprand);
           oprand->dump();
           llvm::errs() << "-----UOP end\n";
-          globalRegion.append(Instruction(
+          globalRegion.instructions.push_back(Instruction(
               clang::UnaryOperator::getOpcodeStr(unOp->getOpcode()).str(),
               globalRegion.st[assignToRef->getDecl()->getNameAsString()],
               globalRegion.st[oprand->getDecl()->getNameAsString()],
@@ -188,7 +190,7 @@ public:
       auto retVarName = clang::dyn_cast<clang::DeclRefExpr>(ret)
                             ->getDecl()
                             ->getNameAsString();
-      globalRegion.outputs2xored[retVarName] = {};
+      ret_var = retVarName;
       return true;
     }
     return true;
@@ -247,20 +249,25 @@ public:
     // Replace
     llvm::errs() << "---REPLACE---\n";
     TrivialRegionDivider divider(globalRegion);
-    CombinedRegion res;
-    res.curRegion.st = globalRegion.st;
-    res.curRegion.dump();
-    llvm::errs() << "---COMPOSITE---\n";
+
+    DefUseCombinedRegion res;
+    res.region.st = globalRegion.st;
+    res.region.dump();
+    llvm::errs() << "---defuse---\n";
     while (!divider.done()) {
       Region subRegion = divider.next();
-      subRegion.dump();
-      TrivialMaskedRegion maskedRegion(subRegion);
-      res.add(std::move(maskedRegion.region));
+      TrivialMaskedRegion masked(subRegion);
+      masked.dump();
+      res.add(std::move(masked));
     }
-    res.curRegion.dump();
+    res.dump();
+
+    llvm::errs() << "---COMPOSITE---\n";
+    FinalRegion{std::move(res)}.printAsCode("masked_func", ret_var,
+                                            original_fparams);
     // pass the original arguments to make the order keep the same
-    res.printAsCode("masked_func", globalRegion.outputs2xored.begin()->first,
-                    original_fparams);
+    // res.printAsCode("masked_func", globalRegion.outputs2xored.begin()->first,
+    //                 original_fparams);
   }
 };
 

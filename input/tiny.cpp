@@ -33,8 +33,8 @@ bool tiny_compute(bool k1, bool k2, bool k3, bool k4, bool k5, bool k6, bool p1=
 
 
     // workaround
-    n2cp_ = ~n2_1;
-    n2cp = ~n2cp_;
+    n2cp_ = !n2_1;
+    n2cp = !n2cp_;
 
     temp4 = n4_1 & n2cp;
     n7_1 = p1 | temp4;

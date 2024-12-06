@@ -14,6 +14,12 @@ cmake ..
 make
 # ./Re-SC-Masker ../input/minimum.cpp > ../output/minimum.cpp
 ```
+
+## Requirements
+
+- SSA format: no re-assignment to the same variable
+- No constants
+
 ## Examples
 
 Locate in `/input`(original programs) and `/output`(masked programs).
@@ -22,15 +28,22 @@ Locate in `/input`(original programs) and `/output`(masked programs).
 - `tiny-size.cpp`: about 20 lines
 - `medium-size.cpp`: about 50 lines
 
-## Issues/TODOs
+## Issues
 
-- Allow multiple uses of a variable!
+- Unused local variables are problematic. You need to remove them.
+
+## TODOs
+
+- Support the move operation `a=b;`
+- Update SymbolTable while issuing a new instruction (instead of manual update)
 - Automatically assign new names for temps
 - More comments!
 - Consistence naming (no more `lowerCamelCase`)
-- Batch handling
 - Reuse random/uniformly-distributed variables
 - Non-trival classes
+- Use Clang's declaration instead of class `Instruction`
+- `return` handled as a normal instruction
+- Less copying!
 
 ## Declaration
 
