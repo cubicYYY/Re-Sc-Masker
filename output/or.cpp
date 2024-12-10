@@ -1,16 +1,25 @@
-bool masked_func(bool k1=0,bool k2=0,bool t1ornA_unmask_r102=0,bool t1ornB_unmask_r101=0,bool r101=0,bool r102=0,bool t1ornA_unmask_r100=0,bool r100=0,bool t1ornA_allmask_1=0,bool r105=0,bool t1ornB_allmask_1=0,bool t1ornB_unmask_r103=0,bool t1orand_unmask_t1orandandtmp6=0,bool t1orand_allmask_1=0,bool t1orand_unmask_r105=0,bool r104=0,bool r103=0){
+bool masked_func(bool k1=0,bool k2=0,bool r101=0,bool r102=0,bool r100=0,bool r105=0,bool r104=0,bool r103=0){
 bool t1orandandtmp4;
+bool t1ornA_unmask_r102;
 bool t1orandandtmp2;
 bool t1orandandr2;
 bool t1orandandneg1;
 bool t1ornAnotmT;
+bool t1ornB_unmask_r101;
 bool t1orandandneg2;
 bool t1orandandtmp1;
 bool t1notmT;
+bool t1ornA_unmask_r100;
 bool t1;
 bool t1orandandmA;
+bool t1ornA_allmask_1;
+bool t1ornB_allmask_1;
+bool t1ornB_unmask_r103;
 bool t1orandandtmp5;
+bool t1orand_unmask_t1orandandtmp6;
 bool t1orandandmB;
+bool t1orand_allmask_1;
+bool t1orand_unmask_r105;
 bool t1orandandtmp3;
 bool t1orandandtmp6;
 bool t1ornB;

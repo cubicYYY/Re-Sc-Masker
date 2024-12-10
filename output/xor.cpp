@@ -1,7 +1,10 @@
-bool masked_func(bool k1=0,bool k2=0,bool k3=0,bool t1_unmask_t1xormT=0,bool r102=0,bool r103=0,bool t1_unmask_r102=0,bool t1_allmask_1=0,bool r101=0,bool r100=0){
+bool masked_func(bool k1=0,bool k2=0,bool k3=0,bool r102=0,bool r103=0,bool r101=0,bool r100=0){
+bool t1_unmask_t1xormT;
 bool t2xormA;
 bool t2xormB;
 bool t2;
+bool t1_unmask_r102;
+bool t1_allmask_1;
 bool t1xormR;
 bool t1;
 bool t1xormT;

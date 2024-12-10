@@ -1,20 +1,34 @@
-bool masked_func(bool k1=0,bool k2=0,bool k3=0,bool r1=0,bool r2=0,bool r3=0,bool y_unmask_yxormT=0,bool y_allmask_1=0,bool x_unmask_r107=0,bool t2_allmask_1=0,bool t1_unmask_r101=0,bool t1_allmask_2=0,bool t2_unmask_t2xormT=0,bool t1_unmask_r100=0,bool r105=0,bool t2_unmask_r105=0,bool t1_unmask_r103=0,bool r104=0,bool x_allmask_1=0,bool x_unmask_xxormT=0,bool r100=0,bool r108=0,bool y_unmask_r108=0,bool r106=0,bool r107=0,bool r101=0,bool t1_allmask_1=0,bool r102=0,bool r103=0){
+bool masked_func(bool k1=0,bool k2=0,bool k3=0,bool r1=0,bool r2=0,bool r3=0,bool r105=0,bool r104=0,bool r100=0,bool r108=0,bool r106=0,bool r107=0,bool r101=0,bool r102=0,bool r103=0){
+bool y_unmask_yxormT;
+bool y_allmask_1;
+bool x_unmask_r107;
+bool t2_allmask_1;
+bool t1_unmask_r101;
+bool t1_allmask_2;
+bool t2_unmask_t2xormT;
 bool zxormA;
 bool zxormR;
+bool t1_unmask_r100;
 bool zxormT;
 bool zxormB;
 bool yxormT;
+bool t2_unmask_r105;
 bool t1;
+bool t1_unmask_r103;
 bool x;
+bool x_allmask_1;
 bool t2xormB;
 bool t1notmA;
+bool x_unmask_xxormT;
 bool yxormB;
 bool y;
+bool y_unmask_r108;
 bool t2xormA;
 bool xxormT;
 bool t2;
 bool yxormR;
 bool z;
+bool t1_allmask_1;
 bool t2xormR;
 bool xxormA;
 bool t1notmT;

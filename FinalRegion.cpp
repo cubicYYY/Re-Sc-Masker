@@ -47,7 +47,7 @@ FinalRegion::FinalRegion(DefUseCombinedRegion &&r) {
         }
         ValueInfo current(inst.assignTo.name + "_allmask_" +
                               std::to_string(++id),
-                          VType::Bool, VProp::RND, nullptr);
+                          VType::Bool, VProp::MASKED, nullptr);
         curRegion.st[current.name] = current;
         curRegion.instructions.push_back(
             Instruction{"^", current, previous, xored});
@@ -59,7 +59,7 @@ FinalRegion::FinalRegion(DefUseCombinedRegion &&r) {
       if (id > 0) {
         for (const auto &xored : vars) {
           ValueInfo unmask(inst.assignTo.name + "_unmask_" + xored.name,
-                           VType::Bool, VProp::RND, nullptr);
+                           VType::Bool, VProp::MASKED, nullptr);
           curRegion.st[unmask.name] = unmask;
           curRegion.instructions.push_back(
               Instruction{"^", unmask, all_mask, xored});
@@ -137,6 +137,7 @@ void FinalRegion::printAsCode(std::string_view func_name,
       llvm::outs() << ",";
     }
     llvm::outs() << "bool " << vname << "=0"; // TODO: remove the default value
+    llvm::errs() << "origin:" << vname << "\n";
   }
   for (const auto &var : curRegion.st) {
     const auto &vi = var.second;
@@ -147,6 +148,7 @@ void FinalRegion::printAsCode(std::string_view func_name,
     // Find all params declared in the function signature
     if ((vi.clangDecl && vi.clangDecl->getKind() == clang::Decl::ParmVar) ||
         vi.prop == VProp::RND) {
+      llvm::errs() << "added:" << vi.name << "\n";
       if (isFirstParam) {
         isFirstParam = false;
       } else {

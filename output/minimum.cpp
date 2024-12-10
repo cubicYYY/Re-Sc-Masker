@@ -1,4 +1,10 @@
-bool masked_func(bool k1=0,bool k2=0,bool k3=0,bool n2_unmask_n2andtmp6=0,bool n2_unmask_r104=0,bool n3_unmask_r100=0,bool n3_unmask_r101=0,bool n2_allmask_1=0,bool n3_allmask_1=0,bool r104=0,bool r101=0,bool r102=0,bool r100=0,bool r103=0,bool r105=0){
+bool masked_func(bool k1=0,bool k2=0,bool k3=0,bool r104=0,bool r101=0,bool r102=0,bool r100=0,bool r103=0,bool r105=0){
+bool n2_unmask_n2andtmp6;
+bool n2_unmask_r104;
+bool n3_unmask_r100;
+bool n3_unmask_r101;
+bool n2_allmask_1;
+bool n3_allmask_1;
 bool n2andmA;
 bool n3notmA;
 bool n1xormA;
