@@ -43,9 +43,9 @@ TrivialMaskedRegion::replaceInstruction(const Instruction &inst) {
   // TRICK: A|B == !( (!A) & (!B) )
   // need optimization!
   if (op == "|" || op == "||") {
-    ValueInfo nA(assignTo.name + "ornA", VType::Bool, VProp::UNK, nullptr);
-    ValueInfo nB(assignTo.name + "ornB", VType::Bool, VProp::UNK, nullptr);
-    ValueInfo andNN(assignTo.name + "orand", VType::Bool, VProp::MASKED,
+    ValueInfo nA(assignTo.name + "ornA", 1, VProp::UNK, nullptr);
+    ValueInfo nB(assignTo.name + "ornB", 1, VProp::UNK, nullptr);
+    ValueInfo andNN(assignTo.name + "orand", 1, VProp::MASKED,
                     nullptr);
     region.st[nA.name] = nA;
     region.st[nB.name] = nB;
@@ -83,10 +83,10 @@ TrivialMaskedRegion::replaceInstruction(const Instruction &inst) {
 
     ValueInfo r1 = ValueInfo::getNewRand();
     ValueInfo r2 = ValueInfo::getNewRand();
-    ValueInfo mA(assignTo.name + "xormA", VType::Bool, VProp::MASKED, nullptr);
-    ValueInfo mB(assignTo.name + "xormB", VType::Bool, VProp::MASKED, nullptr);
-    ValueInfo mR(assignTo.name + "xormR", VType::Bool, VProp::MASKED, nullptr);
-    ValueInfo mT(assignTo.name + "xormT", VType::Bool, VProp::MASKED, nullptr);
+    ValueInfo mA(assignTo.name + "xormA", 1, VProp::MASKED, nullptr);
+    ValueInfo mB(assignTo.name + "xormB", 1, VProp::MASKED, nullptr);
+    ValueInfo mR(assignTo.name + "xormR", 1, VProp::MASKED, nullptr);
+    ValueInfo mT(assignTo.name + "xormT", 1, VProp::MASKED, nullptr);
 
     region.st[r1.name] = r1;
     region.st[r2.name] = r2;
@@ -111,8 +111,8 @@ TrivialMaskedRegion::replaceInstruction(const Instruction &inst) {
     // T=mT^r1
 
     ValueInfo r1 = ValueInfo::getNewRand();
-    ValueInfo mA(assignTo.name + "notmA", VType::Bool, VProp::MASKED, nullptr);
-    ValueInfo mT(assignTo.name + "notmT", VType::Bool, VProp::MASKED, nullptr);
+    ValueInfo mA(assignTo.name + "notmA", 1, VProp::MASKED, nullptr);
+    ValueInfo mT(assignTo.name + "notmT", 1, VProp::MASKED, nullptr);
 
     region.st[r1.name] = r1;
     region.st[mA.name] = mA;
@@ -143,18 +143,18 @@ TrivialMaskedRegion::replaceInstruction(const Instruction &inst) {
     ValueInfo r1 = ValueInfo::getNewRand();
     ValueInfo r2 = ValueInfo::getNewRand();
     ValueInfo r3 = ValueInfo::getNewRand();
-    ValueInfo mA(assignTo.name + "andmA", VType::Bool, VProp::MASKED, nullptr);
-    ValueInfo mB(assignTo.name + "andmB", VType::Bool, VProp::MASKED, nullptr);
-    ValueInfo negmB(assignTo.name + "andneg1", VType::Bool, VProp::UNK,
+    ValueInfo mA(assignTo.name + "andmA", 1, VProp::MASKED, nullptr);
+    ValueInfo mB(assignTo.name + "andmB", 1, VProp::MASKED, nullptr);
+    ValueInfo negmB(assignTo.name + "andneg1", 1, VProp::UNK,
                     nullptr);
-    ValueInfo mAr2(assignTo.name + "andr2", VType::Bool, VProp::UNK, nullptr);
-    ValueInfo negr3(assignTo.name + "andneg2", r3.type, VProp::UNK, nullptr);
-    ValueInfo tmp1(assignTo.name + "andtmp1", VType::Bool, VProp::UNK, nullptr);
-    ValueInfo tmp2(assignTo.name + "andtmp2", VType::Bool, VProp::UNK, nullptr);
-    ValueInfo tmp3(assignTo.name + "andtmp3", VType::Bool, VProp::UNK, nullptr);
-    ValueInfo tmp4(assignTo.name + "andtmp4", VType::Bool, VProp::UNK, nullptr);
-    ValueInfo tmp5(assignTo.name + "andtmp5", VType::Bool, VProp::UNK, nullptr);
-    ValueInfo tmp6(assignTo.name + "andtmp6", VType::Bool, VProp::UNK, nullptr);
+    ValueInfo mAr2(assignTo.name + "andr2", 1, VProp::UNK, nullptr);
+    ValueInfo negr3(assignTo.name + "andneg2", r3.width, VProp::UNK, nullptr);
+    ValueInfo tmp1(assignTo.name + "andtmp1", 1, VProp::UNK, nullptr);
+    ValueInfo tmp2(assignTo.name + "andtmp2", 1, VProp::UNK, nullptr);
+    ValueInfo tmp3(assignTo.name + "andtmp3", 1, VProp::UNK, nullptr);
+    ValueInfo tmp4(assignTo.name + "andtmp4", 1, VProp::UNK, nullptr);
+    ValueInfo tmp5(assignTo.name + "andtmp5", 1, VProp::UNK, nullptr);
+    ValueInfo tmp6(assignTo.name + "andtmp6", 1, VProp::UNK, nullptr);
 
     region.st[r1.name] = r1;
     region.st[r2.name] = r2;

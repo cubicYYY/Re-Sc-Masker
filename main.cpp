@@ -1,4 +1,5 @@
 
+#include "BitBlast.hpp"
 #include "DataStructures.hpp"
 #include "DefUseRegion.hpp"
 #include "FinalRegion.hpp"
@@ -67,7 +68,7 @@ public:
           prop = VProp::UNK;
         }
         // insert into the ST
-        auto vi = ValueInfo(varName, VType::Bool, prop, varDecl);
+        auto vi = ValueInfo(varName, 1, prop, varDecl);
         globalRegion.st[varName] = vi;
 
         llvm::errs() << "ST inserted:" << varName << " " << toString(prop)
@@ -246,6 +247,18 @@ public:
     llvm::errs() << "---DUMP---\n";
     globalRegion.dump();
 
+// Bit-blasting
+#define BLAST 0
+    if (BLAST) {
+      // TODO: apply bit-blasting to sub-regions but not the global one!
+      llvm::errs() << "---Bit-Blast(Global)---\n";
+      // FIXME: get the correct ValueInfo of the returned value!
+      auto blasted = BitBlastPass(
+          globalRegion.st, ValueInfo(ret_var, 1, VProp::OUTPUT, nullptr));
+      blasted.add(std::move(globalRegion));
+      globalRegion = blasted.get();
+    }
+
     // Replace
     llvm::errs() << "---REPLACE---\n";
     TrivialRegionDivider divider(globalRegion);
@@ -253,7 +266,7 @@ public:
     DefUseCombinedRegion res;
     res.region.st = globalRegion.st;
     res.region.dump();
-    llvm::errs() << "---defuse---\n";
+
     while (!divider.done()) {
       Region subRegion = divider.next();
       TrivialMaskedRegion masked(subRegion);

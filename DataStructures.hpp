@@ -2,6 +2,8 @@
 
 #include "clang/AST/Decl.h"
 #include <atomic>
+#include <cassert>
+#include <cstddef>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -15,6 +17,7 @@ enum class VProp {
   RND,
   CST,
   SECRET,
+  OUTPUT,
 };
 inline std::string toString(VProp v) {
   switch (v) {
@@ -30,36 +33,33 @@ inline std::string toString(VProp v) {
     return "CST";
   case VProp::SECRET:
     return "SECRET";
+  case VProp::OUTPUT:
+    return "OUTPUT";
   default:
     return "Unknown";
   }
 }
 
-// TODO: maybe reuse LLVM ones?
-enum class VType {
-  UNK,
-  Bool,
-};
+using Width = size_t;
 
 /// TODO: auto insertion into an optional SymbolTable
 class ValueInfo {
 public:
-  ValueInfo()
-      : name(""), type(VType::UNK), prop(VProp::UNK), clangDecl(nullptr) {}
-  ValueInfo(std::string_view name, VType type, VProp prop,
+  ValueInfo() : name(""), width(0), prop(VProp::UNK), clangDecl(nullptr) {}
+  ValueInfo(std::string_view name, Width width, VProp prop,
             const clang::VarDecl *clangDecl)
-      : name(name), type(type), prop(prop), clangDecl(clangDecl) {}
+      : name(name), width(width), prop(prop), clangDecl(clangDecl) {}
   ValueInfo(ValueInfo &&val)
-      : name(val.name), type(val.type), prop(val.prop),
+      : name(val.name), width(val.width), prop(val.prop),
         clangDecl(val.clangDecl) {}
   ValueInfo(const ValueInfo &val)
-      : name(val.name), type(val.type), prop(val.prop),
+      : name(val.name), width(val.width), prop(val.prop),
         clangDecl(val.clangDecl) {}
 
   // Copy Assignment Operator
   ValueInfo &operator=(const ValueInfo &other) {
     name = other.name;
-    type = other.type;
+    width = other.width;
     prop = other.prop;
     clangDecl = other.clangDecl;
     return *this;
@@ -68,7 +68,7 @@ public:
   // Move Assignment Operator
   ValueInfo &operator=(ValueInfo &&other) noexcept {
     name = other.name;
-    type = other.type;
+    width = other.width;
     prop = other.prop;
     clangDecl = other.clangDecl;
     return *this;
@@ -76,7 +76,7 @@ public:
 
   bool operator==(const ValueInfo &other) const {
     return name == other.name && clangDecl == other.clangDecl &&
-           type == other.type && prop == other.prop;
+           width == other.width && prop == other.prop;
   }
 
   bool operator!=(const ValueInfo &other) const { return !(*this == other); }
@@ -87,16 +87,16 @@ public:
     static std::atomic<size_t> currentId{ID_START};
 
     std::string newName = "r" + std::to_string(currentId++);
-    return ValueInfo(newName, VType::Bool, VProp::RND, nullptr);
+    return ValueInfo(newName, 1, VProp::RND, nullptr);
   }
 
   bool isNone() const {
-    return type == VType::UNK && prop == VProp::UNK && clangDecl == nullptr;
+    return width == 0 && prop == VProp::UNK && clangDecl == nullptr;
   }
 
 public:
   std::string name;
-  VType type;
+  Width width;
   VProp prop;
   /// NOTE: may be nullptr!
   const clang::VarDecl *clangDecl;
@@ -186,8 +186,7 @@ public:
 private:
   std::string valueInfoToString(const ValueInfo &val) const {
     std::ostringstream oss;
-    oss << "{Name: " << val.name
-        << ", Type: " << (val.type == VType::Bool ? "Bool" : "Unknown")
+    oss << "{Name: " << val.name << ", Width: " << val.width
         << ", Prop: " << toString(val.prop)
         << ", ClangDecl: " << (val.clangDecl ? "Valid" : "Null") << "}";
     if (val.clangDecl) {
@@ -203,3 +202,8 @@ public:
 };
 
 static Region getNullRegion() { return Region(); }
+
+class Pass {
+public:
+  virtual Region get() = 0;
+};
