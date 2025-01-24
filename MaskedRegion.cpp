@@ -5,12 +5,12 @@
 #include <llvm-16/llvm/Support/raw_ostream.h>
 
 void TrivialMaskedRegion::dump() const {
-  llvm::errs() << "----!Dumping: tmr\n";
+  llvm::errs() << "----trivial masked=\n";
   // region.dump();
   for (auto out : outputs) {
     llvm::errs() << out.name << ";";
   }
-  llvm::errs() << "----!dumped\n";
+  llvm::errs() << "\n----!dumped\n";
 }
 TrivialMaskedRegion::TrivialMaskedRegion(Region &originalRegion) {
   assert(originalRegion.count() == 1);
@@ -73,6 +73,49 @@ TrivialMaskedRegion::replaceInstruction(const Instruction &inst) {
     return res.curRegion.instructions;
   }
 
+  else if (op == "==") {
+    // EQ: T=(A==B)=!(A^B) ->
+    // mA=A^r1;
+    // mB=B^r2;
+    // mT=mA^mB;
+    // mR=r1^r2;
+    // T_=mT^r3;
+    // mC = T_^mR;
+    // Tr3 = ~mC;
+    // T = Tr3^r3;
+
+    ValueInfo r1 = ValueInfo::getNewRand();
+    ValueInfo r2 = ValueInfo::getNewRand();
+    ValueInfo mA(assignTo.name + "xormA", 1, VProp::MASKED, nullptr);
+    ValueInfo mB(assignTo.name + "xormB", 1, VProp::MASKED, nullptr);
+    ValueInfo mR(assignTo.name + "xormR", 1, VProp::MASKED, nullptr);
+    ValueInfo mT(assignTo.name + "xormT", 1, VProp::MASKED, nullptr);
+    ValueInfo T_(assignTo.name + "xormT_", 1, VProp::MASKED, nullptr);
+    ValueInfo mC(assignTo.name + "xormC", 1, VProp::MASKED, nullptr);
+    ValueInfo Tr3(assignTo.name + "xormTr3", 1, VProp::MASKED, nullptr);
+    ValueInfo r3 = ValueInfo::getNewRand();
+
+    region.st[r1.name] = r1;
+    region.st[r2.name] = r2;
+    region.st[mA.name] = mA;
+    region.st[mB.name] = mB;
+    region.st[mR.name] = mR;
+    region.st[mT.name] = mT;
+    region.st[T_.name] = T_;
+    region.st[mC.name] = mC;
+    region.st[Tr3.name] = Tr3;
+
+    issueNewInst(new_insts, "^", mA, A, r1);
+    issueNewInst(new_insts, "^", mB, B, r2);
+    issueNewInst(new_insts, "^", mT, mA, mB);
+    issueNewInst(new_insts, "^", mR, r1, r2);
+    issueNewInst(new_insts, "^", T_, mT, r3);
+    issueNewInst(new_insts, "^", mC, T_, mR);
+    issueNewInst(new_insts, "!", Tr3, mC, ValueInfo());
+    issueNewInst(new_insts, "^", assignTo, Tr3, r3);
+
+    return new_insts;
+  }
   else if (op == "^") {
     // XOR: T=A^B ->
     // mA=A^r1;

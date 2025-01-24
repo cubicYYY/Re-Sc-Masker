@@ -36,14 +36,11 @@ private:
       var_bits{};
   /// e.g. `k!4` -> `|out#3|`
   std::unordered_map<int, std::string> alias_of;
+  /// e.g. `|out#3|` -> `k!4`
+  std::unordered_map<std::string, int> z3alias;
 
-  /// Who first appears? (aliasing excluded)
-  ///
-  /// This helps us to determine which side should be chosed as the assignment
-  /// target:
-  /// `(= early late)` should be read as `bool late=early`.
-  std::unordered_map<std::string, int> first_appear;
   Region region;
+  ValueInfo ret;
 };
 
 enum class Z3VType { Other, Input, Output };
@@ -54,7 +51,7 @@ public:
   Z3VInfo(const Z3VInfo& o): name(o.name), type(o.type) {}
   Z3VInfo(std::string_view name, Z3VType type) : name(name), type(type) {}
   static std::string getNewName() {
-    static int id = 1000;
+    static int id = 0;
     return "z3_" + std::to_string(id++);
   }
 

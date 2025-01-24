@@ -1,4 +1,3 @@
-
 #include "BitBlast.hpp"
 #include "DataStructures.hpp"
 #include "DefUseRegion.hpp"
@@ -14,6 +13,7 @@
 #include <cassert>
 #include <clang/AST/RecursiveASTVisitor.h>
 
+#include <cstdlib>
 #include <llvm-16/llvm/Support/raw_ostream.h>
 #include <memory>
 #include <vector>
@@ -26,7 +26,7 @@ static llvm::cl::OptionCategory toolCategory("Re-SC-Masker <options>");
 // TODO: move inside of the class
 Region globalRegion;
 std::vector<std::string> original_fparams;
-std::string ret_var;
+ValueInfo ret_var;
 
 class ScMaskerASTVisitor
     : public clang::RecursiveASTVisitor<ScMaskerASTVisitor> {
@@ -51,24 +51,29 @@ public:
         VProp prop = VProp::UNK;
         auto varName = varDecl->getNameAsString();
 
-        if (varDecl->getKind() ==
-            clang::Decl::ParmVar) { // FIXME: do not judge the type by the name
-          if (varName[0] == 'r') {
+        if (varDecl->getKind() == clang::Decl::ParmVar) {
+          // Check if it's a pointer type (output parameter)
+          if (varDecl->getType()->isPointerType()) {
+            prop = VProp::OUTPUT;
+          }
+          // Otherwise check the naming convention
+          else if (varName[0] == 'r') {
             prop = VProp::RND;
           } else if (varName[0] == 'k') {
             prop = VProp::SECRET;
           } else {
             prop = VProp::PUB;
           }
-          // record the original param order
           original_fparams.push_back(varName);
         } else {
-          // label all intermediate var as unknown (i.e. not sure if it is
-          // masked)
           prop = VProp::UNK;
         }
-        // insert into the ST
-        auto vi = ValueInfo(varName, 1, prop, varDecl);
+        // Determine width from variable name
+        auto type = varDecl->getType();
+        llvm::errs() << "type=" << type.getAsString() << "\n";
+        int width = getWidthFromType(type.getAsString()); // default width
+
+        auto vi = ValueInfo(varName, width, prop, varDecl);
         globalRegion.st[varName] = vi;
 
         llvm::errs() << "ST inserted:" << varName << " " << toString(prop)
@@ -172,6 +177,19 @@ public:
               globalRegion.st[assignToRef->getDecl()->getNameAsString()],
               globalRegion.st[oprand->getDecl()->getNameAsString()],
               ValueInfo()));
+        } else if (auto *directRef =
+                       clang::dyn_cast<clang::DeclRefExpr>(assignWith)) {
+          // Handle direct assignments (a = b)
+          llvm::errs() << "-----Direct Assignment: \n";
+          directRef->dump();
+          llvm::errs() << assignToRef->getDecl()->getNameAsString() << "\n";
+          llvm::errs() << directRef->getDecl()->getNameAsString() << "\n";
+          llvm::errs() << "-----Direct Assignment end\n";
+          globalRegion.instructions.push_back(Instruction(
+              "=", // Use assignment operator
+              globalRegion.st[assignToRef->getDecl()->getNameAsString()],
+              globalRegion.st[directRef->getDecl()->getNameAsString()],
+              ValueInfo())); // No third operand needed for direct assignment
         } else {
           // Invalid: Other forms
           std::string rhsStr;
@@ -191,7 +209,13 @@ public:
       auto retVarName = clang::dyn_cast<clang::DeclRefExpr>(ret)
                             ->getDecl()
                             ->getNameAsString();
-      ret_var = retVarName;
+      ret_var =
+          ValueInfo(retVarName,
+                    getWidthFromType(clang::dyn_cast<clang::DeclRefExpr>(ret)
+                                         ->getDecl()
+                                         ->getType()
+                                         .getAsString()),
+                    VProp::OUTPUT, nullptr);
       return true;
     }
     return true;
@@ -248,36 +272,46 @@ public:
     globalRegion.dump();
 
 // Bit-blasting
-#define BLAST 0
-    if (BLAST) {
+#define BLAST_ENABLED 1
+    if (BLAST_ENABLED) {
       // TODO: apply bit-blasting to sub-regions but not the global one!
       llvm::errs() << "---Bit-Blast(Global)---\n";
       // FIXME: get the correct ValueInfo of the returned value!
-      auto blasted = BitBlastPass(
-          globalRegion.st, ValueInfo(ret_var, 1, VProp::OUTPUT, nullptr));
+      auto blasted = BitBlastPass(globalRegion.st, ret_var);
       blasted.add(std::move(globalRegion));
       globalRegion = blasted.get();
+      llvm::errs() << "Blasted insts: " << globalRegion.count() << "\n";
     }
 
-    // Replace
+    // Replace each region with a masked region
     llvm::errs() << "---REPLACE---\n";
     TrivialRegionDivider divider(globalRegion);
 
-    DefUseCombinedRegion res;
-    res.region.st = globalRegion.st;
-    res.region.dump();
+    DefUseCombinedRegion combinator;
+    combinator.region.st = globalRegion.st;
 
+    // Output Xor Set
+    llvm::errs() << "---OUTPUT Xor Set---\n";
+    for (const auto &[var, xorset] : combinator.outputs2xors) {
+      llvm::errs() << var << ": ";
+      for (const auto &xorvar : xorset) {
+        llvm::errs() << xorvar.name << " ";
+      }
+      llvm::errs() << "\n";
+    }
     while (!divider.done()) {
       Region subRegion = divider.next();
       TrivialMaskedRegion masked(subRegion);
+      llvm::errs() << "____MASKED____\n";
       masked.dump();
-      res.add(std::move(masked));
+      llvm::errs() << "________\n";
+      combinator.add(std::move(masked));
     }
-    res.dump();
+    combinator.dump();
 
     llvm::errs() << "---COMPOSITE---\n";
-    FinalRegion{std::move(res)}.printAsCode("masked_func", ret_var,
-                                            original_fparams);
+    FinalRegion{std::move(combinator)}.printAsCode("masked_func", ret_var,
+                                                   original_fparams);
     // pass the original arguments to make the order keep the same
     // res.printAsCode("masked_func", globalRegion.outputs2xored.begin()->first,
     //                 original_fparams);

@@ -11,7 +11,7 @@ class FinalRegion {
 public:
   FinalRegion() = default;
   FinalRegion(DefUseCombinedRegion &&r);
-  void printAsCode(std::string_view func_name, std::string_view return_name,
+  void printAsCode(std::string_view func_name, ValueInfo return_var,
                    std::vector<std::string> original_fparams) const;
 
 public:

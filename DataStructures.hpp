@@ -9,6 +9,44 @@
 #include <string_view>
 #include <vector>
 
+// Helper function to convert a string to a valid variable name
+inline std::string toValidVarName(std::string_view str) {
+  std::string result;
+  result.reserve(str.length());
+
+  // First character must be letter or underscore
+  if (!str.empty()) {
+    if (std::isalpha(str[0]) || str[0] == '_') {
+      result += str[0];
+    } else {
+      if (str[0] == '!') {
+        result += "_not_";
+      } else if (str[0] == '#') {
+        result += "_hash_";
+      } else {
+        result += '_';
+      }
+    }
+  }
+
+  // Subsequent characters can be alphanumeric or underscore
+  for (size_t i = 1; i < str.length(); i++) {
+    if (std::isalnum(str[i]) || str[i] == '_') {
+      result += str[i];
+    } else {
+      if (str[i] == '!') {
+        result += "_not_";
+      } else if (str[i] == '#') {
+        result += "_hash_";
+      } else {
+        result += '_';
+      }
+    }
+  }
+
+  return result;
+}
+
 // Variable property
 enum class VProp {
   UNK,
@@ -40,7 +78,8 @@ inline std::string toString(VProp v) {
   }
 }
 
-using Width = size_t;
+// +: uint, -:int
+using Width = int;
 
 /// TODO: auto insertion into an optional SymbolTable
 class ValueInfo {
@@ -49,7 +88,7 @@ public:
   ValueInfo(std::string_view name, Width width, VProp prop,
             const clang::VarDecl *clangDecl)
       : name(name), width(width), prop(prop), clangDecl(clangDecl) {}
-  ValueInfo(ValueInfo &&val)
+  ValueInfo(ValueInfo &&val) noexcept
       : name(val.name), width(val.width), prop(val.prop),
         clangDecl(val.clangDecl) {}
   ValueInfo(const ValueInfo &val)
@@ -125,6 +164,13 @@ public:
               ValueInfo rhs)
       : op(op), assignTo(assignTo), lhs(lhs), rhs(rhs) {}
   std::string toString() const {
+    if (op == "/z3|=/") {
+      return assignTo.name + " |= " + lhs.name + " << " + rhs.name + ";";
+    }
+    if (op == "/z3=/") {
+      return assignTo.name + " = " + lhs.name + " & (1 << " + rhs.name + ")" +
+             "; // alias";
+    }
     if (op == "=") {
       return assignTo.name + " = " + lhs.name + ";";
     }
@@ -207,3 +253,27 @@ class Pass {
 public:
   virtual Region get() = 0;
 };
+
+inline size_t getWidthFromType(std::string_view type) {
+  size_t width = 1;
+  if (type.find("uint2") != std::string::npos) {
+    width = 2;
+  } else if (type.find("uint8") != std::string::npos) {
+    width = 8;
+  } else if (type.find("uint16") != std::string::npos) {
+    width = 16;
+  } else if (type.find("uint32") != std::string::npos) {
+    width = 32;
+  } else if (type.find("uint64") != std::string::npos) {
+    width = 64;
+  } else if (type.find("int8") != std::string::npos) {
+    width = -8;
+  } else if (type.find("int16") != std::string::npos) {
+    width = -16;
+  } else if (type.find("int32") != std::string::npos) {
+    width = -32;
+  } else if (type.find("int64") != std::string::npos) {
+    width = -64;
+  }
+  return width;
+}
