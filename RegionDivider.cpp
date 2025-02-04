@@ -1,4 +1,5 @@
 #include "RegionDivider.hpp"
+#include "DataStructures.hpp"
 
 /// Return the next region
 Region TrivialRegionDivider::next() {
@@ -8,6 +9,7 @@ Region TrivialRegionDivider::next() {
   }
   auto const &curInst = r.instructions[cur];
   result.instructions.push_back(curInst);
+  result.instructions.push_back(Instruction("//", "------region-----"));
   cur++;
   return result;
 }

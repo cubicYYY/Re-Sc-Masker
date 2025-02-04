@@ -1,4 +1,4 @@
-#include "BitBlast.hpp"
+#include "config.hpp"
 #include "DataStructures.hpp"
 #include "DefUseRegion.hpp"
 #include "FinalRegion.hpp"
@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <llvm-16/llvm/Support/raw_ostream.h>
 #include <memory>
+#include <string>
 #include <vector>
 
 using namespace clang::tooling;
@@ -118,27 +119,27 @@ public:
         assert(wrappedAssignWith != nullptr);
 
         // // Extract actual operands, unwrapping implicit casts if needed
-        auto assignTo = unfold(wrappedAssignTo);
+        auto assign_to = unfold(wrappedAssignTo);
         auto assignWith = unfold(wrappedAssignWith);
-        assert(assignTo != nullptr);
+        assert(assign_to != nullptr);
         assert(assignWith != nullptr);
         llvm::errs() << "....";
-        assignTo->dump();
+        assign_to->dump();
         llvm::errs() << "====";
         assignWith->dump();
 
-        auto *assignToRef = clang::dyn_cast<clang::DeclRefExpr>(assignTo);
-        if (assignToRef) {
-          llvm::errs() << assignToRef->getNameInfo().getAsString() << "\n";
+        auto *assign_toRef = clang::dyn_cast<clang::DeclRefExpr>(assign_to);
+        if (assign_toRef) {
+          llvm::errs() << assign_toRef->getNameInfo().getAsString() << "\n";
         } else {
-          llvm::errs() << "NO! " << assignToRef->getNameInfo().getAsString()
+          llvm::errs() << "NO! " << assign_toRef->getNameInfo().getAsString()
                        << "\n";
           return false; // FAILED
         }
         // Get the LHS variable
         std::string lhsStr;
         llvm::raw_string_ostream lhsOS(lhsStr);
-        assignTo->printPretty(lhsOS, nullptr,
+        assign_to->printPretty(lhsOS, nullptr,
                               clang::PrintingPolicy(clang::LangOptions()));
 
         // Check the expression
@@ -159,7 +160,7 @@ public:
           globalRegion.instructions.push_back(Instruction(
               clang::BinaryOperator::getOpcodeStr(nestedBinOp->getOpcode())
                   .str(),
-              globalRegion.st[assignToRef->getDecl()->getNameAsString()],
+              globalRegion.st[assign_toRef->getDecl()->getNameAsString()],
               globalRegion.st[oprand1->getDecl()->getNameAsString()],
               globalRegion.st[oprand2->getDecl()->getNameAsString()]));
         } else if (auto *unOp =
@@ -174,7 +175,7 @@ public:
           llvm::errs() << "-----UOP end\n";
           globalRegion.instructions.push_back(Instruction(
               clang::UnaryOperator::getOpcodeStr(unOp->getOpcode()).str(),
-              globalRegion.st[assignToRef->getDecl()->getNameAsString()],
+              globalRegion.st[assign_toRef->getDecl()->getNameAsString()],
               globalRegion.st[oprand->getDecl()->getNameAsString()],
               ValueInfo()));
         } else if (auto *directRef =
@@ -182,12 +183,12 @@ public:
           // Handle direct assignments (a = b)
           llvm::errs() << "-----Direct Assignment: \n";
           directRef->dump();
-          llvm::errs() << assignToRef->getDecl()->getNameAsString() << "\n";
+          llvm::errs() << assign_toRef->getDecl()->getNameAsString() << "\n";
           llvm::errs() << directRef->getDecl()->getNameAsString() << "\n";
           llvm::errs() << "-----Direct Assignment end\n";
           globalRegion.instructions.push_back(Instruction(
               "=", // Use assignment operator
-              globalRegion.st[assignToRef->getDecl()->getNameAsString()],
+              globalRegion.st[assign_toRef->getDecl()->getNameAsString()],
               globalRegion.st[directRef->getDecl()->getNameAsString()],
               ValueInfo())); // No third operand needed for direct assignment
         } else {
@@ -260,6 +261,8 @@ private:
   }
 };
 
+
+// The "actual" main function is here
 class ScMaskerASTConsumer : public clang::ASTConsumer {
 public:
   ScMaskerASTConsumer(clang::CompilerInstance &ci, llvm::StringRef file) {}
@@ -272,49 +275,49 @@ public:
     globalRegion.dump();
 
 // Bit-blasting
-#define BLAST_ENABLED 1
-    if (BLAST_ENABLED) {
-      // TODO: apply bit-blasting to sub-regions but not the global one!
-      llvm::errs() << "---Bit-Blast(Global)---\n";
-      // FIXME: get the correct ValueInfo of the returned value!
-      auto blasted = BitBlastPass(globalRegion.st, ret_var);
-      blasted.add(std::move(globalRegion));
-      globalRegion = blasted.get();
-      llvm::errs() << "Blasted insts: " << globalRegion.count() << "\n";
-    }
+
+#ifdef SCM_Z3_BLASTING_ENABLED
+    // TODO: apply bit-blasting to sub-regions but not the global one!
+    llvm::errs() << "---Bit-Blast(Global)---\n";
+    // FIXME: get the correct ValueInfo of the returned value!
+    auto blasted = BitBlastPass(globalRegion.st, ret_var);
+    blasted.add(std::move(globalRegion));
+    globalRegion = blasted.get();
+    llvm::errs() << "Blasted insts: " << globalRegion.count() << "\n";
+#endif
 
     // Replace each region with a masked region
     llvm::errs() << "---REPLACE---\n";
     TrivialRegionDivider divider(globalRegion);
 
-    DefUseCombinedRegion combinator;
-    combinator.region.st = globalRegion.st;
+    DefUseRegion<TrivialMaskedRegion> combinator;
+    // combinator.region.st = globalRegion.st;
 
     // Output Xor Set
     llvm::errs() << "---OUTPUT Xor Set---\n";
-    for (const auto &[var, xorset] : combinator.outputs2xors) {
+    for (const auto &[var, xorset] : combinator.output2xors) {
       llvm::errs() << var << ": ";
       for (const auto &xorvar : xorset) {
-        llvm::errs() << xorvar.name << " ";
+        llvm::errs() << xorvar << " ";
       }
       llvm::errs() << "\n";
     }
+
+    auto region_id = 0;
     while (!divider.done()) {
       Region subRegion = divider.next();
       TrivialMaskedRegion masked(subRegion);
-      llvm::errs() << "____MASKED____\n";
+      llvm::errs() << "Masked: " + std::to_string(region_id++) + "\n";
       masked.dump();
-      llvm::errs() << "________\n";
       combinator.add(std::move(masked));
     }
+    llvm::errs() << "\n===DefUse Combined===\n";
     combinator.dump();
 
     llvm::errs() << "---COMPOSITE---\n";
+    // pass the original arguments to make the order unchanged
     FinalRegion{std::move(combinator)}.printAsCode("masked_func", ret_var,
                                                    original_fparams);
-    // pass the original arguments to make the order keep the same
-    // res.printAsCode("masked_func", globalRegion.outputs2xored.begin()->first,
-    //                 original_fparams);
   }
 };
 

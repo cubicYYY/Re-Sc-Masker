@@ -7,7 +7,7 @@
 #include <vector>
 
 class TrivialMaskedRegion;
-class DefUseCombinedRegion;
+template <typename MaskedRegionType> class DefUseRegion;
 
 class MaskedRegion {};
 class TrivialMaskedRegion : MaskedRegion {
@@ -22,5 +22,7 @@ private:
 
 public:
   Region region;
+
+  // potential outputs (may not be used in regions followed)
   std::unordered_set<ValueInfo> outputs;
 };

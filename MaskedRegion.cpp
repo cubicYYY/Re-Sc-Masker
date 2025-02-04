@@ -5,22 +5,26 @@
 #include <llvm-16/llvm/Support/raw_ostream.h>
 
 void TrivialMaskedRegion::dump() const {
-  llvm::errs() << "----trivial masked=\n";
-  // region.dump();
+  llvm::errs() << "\n(trivial masked)\n";
+  region.dump();
   for (auto out : outputs) {
     llvm::errs() << out.name << ";";
   }
-  llvm::errs() << "\n----!dumped\n";
+  llvm::errs() << "\n----\n";
 }
 TrivialMaskedRegion::TrivialMaskedRegion(Region &originalRegion) {
-  assert(originalRegion.count() == 1);
+  assert(originalRegion.count() == 2); // original inst + region divider
   region.st = originalRegion.st;
   // No instruments initially
   for (const auto &inst : originalRegion.instructions) {
+    if (inst.op == "//") {
+      region.instructions.push_back(inst);
+      continue;
+    }
     auto maskedInsts = replaceInstruction(inst); // 1->n
     region.instructions.insert(region.instructions.end(), maskedInsts.begin(),
                                maskedInsts.end());
-    outputs.insert(inst.assignTo);
+    outputs.insert(inst.assign_to);
   }
 }
 
@@ -36,16 +40,19 @@ TrivialMaskedRegion::replaceInstruction(const Instruction &inst) {
   const auto &A = inst.lhs;
   const auto &B = inst.rhs;
   const auto &op = inst.op;
-  const auto &assignTo = inst.assignTo;
+  const auto &assign_to = inst.assign_to;
 
   // TODO: avoid naming conflicts
-
+  if (inst.op=="//") {
+    new_insts.push_back(inst);
+    return new_insts;
+  }
   // TRICK: A|B == !( (!A) & (!B) )
   // need optimization!
   if (op == "|" || op == "||") {
-    ValueInfo nA(assignTo.name + "ornA", 1, VProp::UNK, nullptr);
-    ValueInfo nB(assignTo.name + "ornB", 1, VProp::UNK, nullptr);
-    ValueInfo andNN(assignTo.name + "orand", 1, VProp::MASKED,
+    ValueInfo nA(assign_to.name + "ornA", 1, VProp::UNK, nullptr);
+    ValueInfo nB(assign_to.name + "ornB", 1, VProp::UNK, nullptr);
+    ValueInfo andNN(assign_to.name + "orand", 1, VProp::MASKED,
                     nullptr);
     region.st[nA.name] = nA;
     region.st[nB.name] = nB;
@@ -55,13 +62,13 @@ TrivialMaskedRegion::replaceInstruction(const Instruction &inst) {
     new_insts.emplace_back("!", nA, A, ValueInfo());
     new_insts.emplace_back("!", nB, B, ValueInfo());
     new_insts.emplace_back("&&", andNN, nA, nB);
-    new_insts.emplace_back("!", assignTo, andNN, ValueInfo());
+    new_insts.emplace_back("!", assign_to, andNN, ValueInfo());
     Region realReplaced;
     realReplaced.instructions = new_insts;
 
     TrivialRegionDivider realDivided(realReplaced);
 
-    DefUseCombinedRegion defuse;
+    DefUseRegion<TrivialMaskedRegion> defuse;
     while (!realDivided.done()) {
       Region subRegion = realDivided.next();
       defuse.add(TrivialMaskedRegion(subRegion));
@@ -86,13 +93,13 @@ TrivialMaskedRegion::replaceInstruction(const Instruction &inst) {
 
     ValueInfo r1 = ValueInfo::getNewRand();
     ValueInfo r2 = ValueInfo::getNewRand();
-    ValueInfo mA(assignTo.name + "xormA", 1, VProp::MASKED, nullptr);
-    ValueInfo mB(assignTo.name + "xormB", 1, VProp::MASKED, nullptr);
-    ValueInfo mR(assignTo.name + "xormR", 1, VProp::MASKED, nullptr);
-    ValueInfo mT(assignTo.name + "xormT", 1, VProp::MASKED, nullptr);
-    ValueInfo T_(assignTo.name + "xormT_", 1, VProp::MASKED, nullptr);
-    ValueInfo mC(assignTo.name + "xormC", 1, VProp::MASKED, nullptr);
-    ValueInfo Tr3(assignTo.name + "xormTr3", 1, VProp::MASKED, nullptr);
+    ValueInfo mA(assign_to.name + "xormA", 1, VProp::MASKED, nullptr);
+    ValueInfo mB(assign_to.name + "xormB", 1, VProp::MASKED, nullptr);
+    ValueInfo mR(assign_to.name + "xormR", 1, VProp::MASKED, nullptr);
+    ValueInfo mT(assign_to.name + "xormT", 1, VProp::MASKED, nullptr);
+    ValueInfo T_(assign_to.name + "xormT_", 1, VProp::MASKED, nullptr);
+    ValueInfo mC(assign_to.name + "xormC", 1, VProp::MASKED, nullptr);
+    ValueInfo Tr3(assign_to.name + "xormTr3", 1, VProp::MASKED, nullptr);
     ValueInfo r3 = ValueInfo::getNewRand();
 
     region.st[r1.name] = r1;
@@ -112,7 +119,7 @@ TrivialMaskedRegion::replaceInstruction(const Instruction &inst) {
     issueNewInst(new_insts, "^", T_, mT, r3);
     issueNewInst(new_insts, "^", mC, T_, mR);
     issueNewInst(new_insts, "!", Tr3, mC, ValueInfo());
-    issueNewInst(new_insts, "^", assignTo, Tr3, r3);
+    issueNewInst(new_insts, "^", assign_to, Tr3, r3);
 
     return new_insts;
   }
@@ -126,10 +133,10 @@ TrivialMaskedRegion::replaceInstruction(const Instruction &inst) {
 
     ValueInfo r1 = ValueInfo::getNewRand();
     ValueInfo r2 = ValueInfo::getNewRand();
-    ValueInfo mA(assignTo.name + "xormA", 1, VProp::MASKED, nullptr);
-    ValueInfo mB(assignTo.name + "xormB", 1, VProp::MASKED, nullptr);
-    ValueInfo mR(assignTo.name + "xormR", 1, VProp::MASKED, nullptr);
-    ValueInfo mT(assignTo.name + "xormT", 1, VProp::MASKED, nullptr);
+    ValueInfo mA(assign_to.name + "xormA", 1, VProp::MASKED, nullptr);
+    ValueInfo mB(assign_to.name + "xormB", 1, VProp::MASKED, nullptr);
+    ValueInfo mR(assign_to.name + "xormR", 1, VProp::MASKED, nullptr);
+    ValueInfo mT(assign_to.name + "xormT", 1, VProp::MASKED, nullptr);
 
     region.st[r1.name] = r1;
     region.st[r2.name] = r2;
@@ -142,7 +149,7 @@ TrivialMaskedRegion::replaceInstruction(const Instruction &inst) {
     issueNewInst(new_insts, "^", mB, B, r2);
     issueNewInst(new_insts, "^", mT, mA, mB);
     issueNewInst(new_insts, "^", mR, r1, r2);
-    issueNewInst(new_insts, "^", assignTo, mR, mT);
+    issueNewInst(new_insts, "^", assign_to, mR, mT);
 
     return new_insts;
   }
@@ -154,8 +161,8 @@ TrivialMaskedRegion::replaceInstruction(const Instruction &inst) {
     // T=mT^r1
 
     ValueInfo r1 = ValueInfo::getNewRand();
-    ValueInfo mA(assignTo.name + "notmA", 1, VProp::MASKED, nullptr);
-    ValueInfo mT(assignTo.name + "notmT", 1, VProp::MASKED, nullptr);
+    ValueInfo mA(assign_to.name + "notmA", 1, VProp::MASKED, nullptr);
+    ValueInfo mT(assign_to.name + "notmT", 1, VProp::MASKED, nullptr);
 
     region.st[r1.name] = r1;
     region.st[mA.name] = mA;
@@ -163,7 +170,7 @@ TrivialMaskedRegion::replaceInstruction(const Instruction &inst) {
 
     issueNewInst(new_insts, "^", mA, A, r1);
     issueNewInst(new_insts, "!", mT, mA, ValueInfo());
-    issueNewInst(new_insts, "^", assignTo, mT, r1);
+    issueNewInst(new_insts, "^", assign_to, mT, r1);
 
     return new_insts;
   }
@@ -186,18 +193,18 @@ TrivialMaskedRegion::replaceInstruction(const Instruction &inst) {
     ValueInfo r1 = ValueInfo::getNewRand();
     ValueInfo r2 = ValueInfo::getNewRand();
     ValueInfo r3 = ValueInfo::getNewRand();
-    ValueInfo mA(assignTo.name + "andmA", 1, VProp::MASKED, nullptr);
-    ValueInfo mB(assignTo.name + "andmB", 1, VProp::MASKED, nullptr);
-    ValueInfo negmB(assignTo.name + "andneg1", 1, VProp::UNK,
+    ValueInfo mA(assign_to.name + "andmA", 1, VProp::MASKED, nullptr);
+    ValueInfo mB(assign_to.name + "andmB", 1, VProp::MASKED, nullptr);
+    ValueInfo negmB(assign_to.name + "andneg1", 1, VProp::UNK,
                     nullptr);
-    ValueInfo mAr2(assignTo.name + "andr2", 1, VProp::UNK, nullptr);
-    ValueInfo negr3(assignTo.name + "andneg2", r3.width, VProp::UNK, nullptr);
-    ValueInfo tmp1(assignTo.name + "andtmp1", 1, VProp::UNK, nullptr);
-    ValueInfo tmp2(assignTo.name + "andtmp2", 1, VProp::UNK, nullptr);
-    ValueInfo tmp3(assignTo.name + "andtmp3", 1, VProp::UNK, nullptr);
-    ValueInfo tmp4(assignTo.name + "andtmp4", 1, VProp::UNK, nullptr);
-    ValueInfo tmp5(assignTo.name + "andtmp5", 1, VProp::UNK, nullptr);
-    ValueInfo tmp6(assignTo.name + "andtmp6", 1, VProp::UNK, nullptr);
+    ValueInfo mAr2(assign_to.name + "andr2", 1, VProp::UNK, nullptr);
+    ValueInfo negr3(assign_to.name + "andneg2", r3.width, VProp::UNK, nullptr);
+    ValueInfo tmp1(assign_to.name + "andtmp1", 1, VProp::UNK, nullptr);
+    ValueInfo tmp2(assign_to.name + "andtmp2", 1, VProp::UNK, nullptr);
+    ValueInfo tmp3(assign_to.name + "andtmp3", 1, VProp::UNK, nullptr);
+    ValueInfo tmp4(assign_to.name + "andtmp4", 1, VProp::UNK, nullptr);
+    ValueInfo tmp5(assign_to.name + "andtmp5", 1, VProp::UNK, nullptr);
+    ValueInfo tmp6(assign_to.name + "andtmp6", 1, VProp::UNK, nullptr);
 
     region.st[r1.name] = r1;
     region.st[r2.name] = r2;
@@ -226,7 +233,7 @@ TrivialMaskedRegion::replaceInstruction(const Instruction &inst) {
     issueNewInst(new_insts, "||", tmp4, negr3, r2);
     issueNewInst(new_insts, "||", tmp5, tmp1, tmp2);
     issueNewInst(new_insts, "^", tmp6, tmp3, tmp4);
-    issueNewInst(new_insts, "^", assignTo, tmp5, tmp6);
+    issueNewInst(new_insts, "^", assign_to, tmp5, tmp6);
 
     return new_insts;
   }

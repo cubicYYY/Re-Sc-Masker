@@ -56,42 +56,42 @@ void BitBlastPass::add(Region &&r) {
     inst.dump();
     if (inst.op == "=") {
       // Assign operation: a = b
-      auto target_expr = var_expr[inst.assignTo].value();
+      auto target_expr = var_expr[inst.assign_to].value();
       auto left_expr = var_expr[inst.lhs].value();
       z3goal.add(target_expr == left_expr);
     } else if (inst.op == "^") {
       auto left_expr = var_expr[inst.lhs].value();
       auto right_expr = var_expr[inst.rhs].value();
-      auto target_expr = var_expr[inst.assignTo].value();
+      auto target_expr = var_expr[inst.assign_to].value();
       z3goal.add(target_expr == (left_expr ^ right_expr));
     } else if (inst.op == "|") {
       auto left_expr = var_expr[inst.lhs].value();
       auto right_expr = var_expr[inst.rhs].value();
-      auto target_expr = var_expr[inst.assignTo].value();
+      auto target_expr = var_expr[inst.assign_to].value();
       z3goal.add(target_expr == (left_expr | right_expr));
     } else if (inst.op == "&") {
       auto left_expr = var_expr[inst.lhs].value();
       auto right_expr = var_expr[inst.rhs].value();
-      auto target_expr = var_expr[inst.assignTo].value();
+      auto target_expr = var_expr[inst.assign_to].value();
       z3goal.add(target_expr == (left_expr & right_expr));
     } else if (inst.op == "~") {
       auto left_expr = var_expr[inst.lhs].value();
-      auto target_expr = var_expr[inst.assignTo].value();
+      auto target_expr = var_expr[inst.assign_to].value();
       z3goal.add(target_expr == (~left_expr));
     } else if (inst.op == "*") {
       auto left_expr = var_expr[inst.lhs].value();
       auto right_expr = var_expr[inst.rhs].value();
-      auto target_expr = var_expr[inst.assignTo].value();
+      auto target_expr = var_expr[inst.assign_to].value();
       z3goal.add(target_expr == (left_expr * right_expr));
     } else if (inst.op == "+") {
       auto left_expr = var_expr[inst.lhs].value();
       auto right_expr = var_expr[inst.rhs].value();
-      auto target_expr = var_expr[inst.assignTo].value();
+      auto target_expr = var_expr[inst.assign_to].value();
       z3goal.add(target_expr == (left_expr + right_expr));
     } else if (inst.op == "-") {
       auto left_expr = var_expr[inst.lhs].value();
       auto right_expr = var_expr[inst.rhs].value();
-      auto target_expr = var_expr[inst.assignTo].value();
+      auto target_expr = var_expr[inst.assign_to].value();
       z3goal.add(target_expr == (left_expr - right_expr));
     } else if (inst.op == "!") {
       llvm::errs() << "Not implemented: " << inst.op << "\n";

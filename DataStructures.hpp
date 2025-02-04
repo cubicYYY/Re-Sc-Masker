@@ -159,31 +159,40 @@ using SymbolTable = std::unordered_map<std::string, ValueInfo>;
 class Instruction {
 public:
   Instruction() {}
-  void dump() const { llvm::errs() << toString() << "\n"; }
-  Instruction(std::string_view op, ValueInfo assignTo, ValueInfo lhs,
+
+  Instruction(std::string_view op, std::string_view content)
+      : op(op), assign_to(ValueInfo{content, 0, VProp::PUB, nullptr}),
+        lhs(ValueInfo{}), rhs(ValueInfo{}) {}
+
+  Instruction(std::string_view op, ValueInfo assign_to, ValueInfo lhs,
               ValueInfo rhs)
-      : op(op), assignTo(assignTo), lhs(lhs), rhs(rhs) {}
+      : op(op), assign_to(assign_to), lhs(lhs), rhs(rhs) {}
+  
+  void dump() const { llvm::errs() << toString() << "\n"; }
   std::string toString() const {
     if (op == "/z3|=/") {
-      return assignTo.name + " |= " + lhs.name + " << " + rhs.name + ";";
+      return assign_to.name + " |= " + lhs.name + " << " + rhs.name + ";";
     }
     if (op == "/z3=/") {
-      return assignTo.name + " = " + lhs.name + " & (1 << " + rhs.name + ")" +
+      return assign_to.name + " = " + lhs.name + " & (1 << " + rhs.name + ")" +
              "; // alias";
     }
     if (op == "=") {
-      return assignTo.name + " = " + lhs.name + ";";
+      return assign_to.name + " = " + lhs.name + ";";
+    }
+    if (op == "//") {
+      return op + assign_to.name;
     }
     if (rhs.isNone()) {
       // Unary op
-      return assignTo.name + " = " + op + lhs.name + ";";
+      return assign_to.name + " = " + op + lhs.name + ";";
     }
-    return assignTo.name + " = " + lhs.name + op + rhs.name + ";";
+    return assign_to.name + " = " + lhs.name + op + rhs.name + ";";
   }
 
 public:
   std::string op;
-  ValueInfo assignTo, lhs, rhs;
+  ValueInfo assign_to, lhs, rhs;
 };
 class Region {
 public:
@@ -198,12 +207,17 @@ public:
 
     // Dump instructions
     llvm::errs() << "Instructions:\n";
+    // for (const auto &inst : instructions) {
+    //   llvm::errs() << "  Op: " << inst.op << "\n";
+    //   llvm::errs() << "    AssignTo: " << valueInfoToString(inst.assign_to)
+    //                << "\n";
+    //   llvm::errs() << "    LHS: " << valueInfoToString(inst.lhs) << "\n";
+    //   llvm::errs() << "    RHS: " << valueInfoToString(inst.rhs) << "\n";
+    // }
+
+    // Simplified
     for (const auto &inst : instructions) {
-      llvm::errs() << "  Op: " << inst.op << "\n";
-      llvm::errs() << "    AssignTo: " << valueInfoToString(inst.assignTo)
-                   << "\n";
-      llvm::errs() << "    LHS: " << valueInfoToString(inst.lhs) << "\n";
-      llvm::errs() << "    RHS: " << valueInfoToString(inst.rhs) << "\n";
+      inst.dump();
     }
 
     // Dump symbol table
@@ -276,4 +290,14 @@ inline size_t getWidthFromType(std::string_view type) {
     width = -64;
   }
   return width;
+}
+
+// FIXME: we should flatten the chain by default (similar to find-union-set)
+template <typename Key>
+inline Key find_root(const std::unordered_map<Key,Key>& index, const Key& key) {
+  Key result = key;
+  while (index.count(result) && index.at(result)!=result) {
+    result = index.at(result);
+  }
+  return result;
 }
