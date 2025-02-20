@@ -1,4 +1,12 @@
-#include "config.hpp"
+#include <clang/AST/RecursiveASTVisitor.h>
+#include <llvm-16/llvm/Support/raw_ostream.h>
+
+#include <cassert>
+#include <cstdlib>
+#include <memory>
+#include <string>
+#include <vector>
+
 #include "DataStructures.hpp"
 #include "DefUseRegion.hpp"
 #include "FinalRegion.hpp"
@@ -10,14 +18,7 @@
 #include "clang/AST/Stmt.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Tooling/Tooling.h"
-#include <cassert>
-#include <clang/AST/RecursiveASTVisitor.h>
-
-#include <cstdlib>
-#include <llvm-16/llvm/Support/raw_ostream.h>
-#include <memory>
-#include <string>
-#include <vector>
+#include "config.hpp"
 
 using namespace clang::tooling;
 using namespace llvm;
@@ -29,10 +30,9 @@ Region globalRegion;
 std::vector<std::string> original_fparams;
 ValueInfo ret_var;
 
-class ScMaskerASTVisitor
-    : public clang::RecursiveASTVisitor<ScMaskerASTVisitor> {
-public:
-  int depth = 0; // Tracks the current depth in the AST
+class ScMaskerASTVisitor : public clang::RecursiveASTVisitor<ScMaskerASTVisitor> {
+ public:
+  int depth = 0;  // Tracks the current depth in the AST
 
   bool VisitDecl(clang::Decl *decl) {
     auto ctxt = decl->getDeclContext();
@@ -72,17 +72,16 @@ public:
         // Determine width from variable name
         auto type = varDecl->getType();
         llvm::errs() << "type=" << type.getAsString() << "\n";
-        int width = getWidthFromType(type.getAsString()); // default width
+        int width = getWidthFromType(type.getAsString());  // default width
 
         auto vi = ValueInfo(varName, width, prop, varDecl);
         globalRegion.st[varName] = vi;
 
-        llvm::errs() << "ST inserted:" << varName << " " << toString(prop)
-                     << "\n";
+        llvm::errs() << "ST inserted:" << varName << " " << toString(prop) << "\n";
         varDecl->dump();
       }
     }
-    return true; // Continue the traversal
+    return true;  // Continue the traversal
   }
 
   clang::Stmt *unfold(clang::Stmt *expr) {
@@ -100,7 +99,7 @@ public:
       expr = parenExpr->getSubExpr();
       return unfold(expr);
     }
-    return expr; // Return the original expression if it's not a cast
+    return expr;  // Return the original expression if it's not a cast
   }
 
   bool VisitStmt(clang::Stmt *stmt) {
@@ -110,8 +109,7 @@ public:
     // Extract assignment operators
     // Check for assignments (BinaryOperator with BO_Assign)
     if (auto *binOp = clang::dyn_cast<clang::BinaryOperator>(stmt)) {
-      if (binOp->getOpcode() ==
-          clang::BinaryOperatorKind::BO_Assign) { // "assignment"
+      if (binOp->getOpcode() == clang::BinaryOperatorKind::BO_Assign) {  // "assignment"
         clang::Expr *wrappedAssignTo = binOp->getLHS();
         clang::Expr *wrappedAssignWith = binOp->getRHS();
         // wrappedAssignTo->children();
@@ -132,73 +130,62 @@ public:
         if (assign_toRef) {
           llvm::errs() << assign_toRef->getNameInfo().getAsString() << "\n";
         } else {
-          llvm::errs() << "NO! " << assign_toRef->getNameInfo().getAsString()
-                       << "\n";
-          return false; // FAILED
+          llvm::errs() << "NO! " << assign_toRef->getNameInfo().getAsString() << "\n";
+          return false;  // FAILED
         }
         // Get the LHS variable
         std::string lhsStr;
         llvm::raw_string_ostream lhsOS(lhsStr);
-        assign_to->printPretty(lhsOS, nullptr,
-                              clang::PrintingPolicy(clang::LangOptions()));
+        assign_to->printPretty(lhsOS, nullptr, clang::PrintingPolicy(clang::LangOptions()));
 
         // Check the expression
-        if (auto *nestedBinOp =
-                clang::dyn_cast<clang::BinaryOperator>(assignWith)) {
+        if (auto *nestedBinOp = clang::dyn_cast<clang::BinaryOperator>(assignWith)) {
           // BINOP: C = A op B
           llvm::errs() << "-----BINOP Assignment: \n";
           // TODO: allow constants
-          auto oprand1 = clang::dyn_cast<clang::DeclRefExpr>(
-              unfold(nestedBinOp->getLHS()));
-          auto oprand2 = clang::dyn_cast<clang::DeclRefExpr>(
-              unfold(nestedBinOp->getRHS()));
+          auto oprand1 = clang::dyn_cast<clang::DeclRefExpr>(unfold(nestedBinOp->getLHS()));
+          auto oprand2 = clang::dyn_cast<clang::DeclRefExpr>(unfold(nestedBinOp->getRHS()));
           assert(oprand1);
           assert(oprand2);
           oprand1->dump();
           oprand2->dump();
           llvm::errs() << "-----BINOP end\n";
-          globalRegion.instructions.push_back(Instruction(
-              clang::BinaryOperator::getOpcodeStr(nestedBinOp->getOpcode())
-                  .str(),
-              globalRegion.st[assign_toRef->getDecl()->getNameAsString()],
-              globalRegion.st[oprand1->getDecl()->getNameAsString()],
-              globalRegion.st[oprand2->getDecl()->getNameAsString()]));
-        } else if (auto *unOp =
-                       clang::dyn_cast<clang::UnaryOperator>(assignWith)) {
+          globalRegion.instructions.push_back(
+              Instruction(clang::BinaryOperator::getOpcodeStr(nestedBinOp->getOpcode()).str(),
+                          globalRegion.st[assign_toRef->getDecl()->getNameAsString()],
+                          globalRegion.st[oprand1->getDecl()->getNameAsString()],
+                          globalRegion.st[oprand2->getDecl()->getNameAsString()]));
+        } else if (auto *unOp = clang::dyn_cast<clang::UnaryOperator>(assignWith)) {
           // UOP: C = op A
           llvm::errs() << "-----UOP Assignment: \n";
           // TODO: allow constants
-          auto oprand =
-              clang::dyn_cast<clang::DeclRefExpr>(unfold(unOp->getSubExpr()));
+          auto oprand = clang::dyn_cast<clang::DeclRefExpr>(unfold(unOp->getSubExpr()));
           assert(oprand);
           oprand->dump();
           llvm::errs() << "-----UOP end\n";
-          globalRegion.instructions.push_back(Instruction(
-              clang::UnaryOperator::getOpcodeStr(unOp->getOpcode()).str(),
-              globalRegion.st[assign_toRef->getDecl()->getNameAsString()],
-              globalRegion.st[oprand->getDecl()->getNameAsString()],
-              ValueInfo()));
-        } else if (auto *directRef =
-                       clang::dyn_cast<clang::DeclRefExpr>(assignWith)) {
+          globalRegion.instructions.push_back(Instruction(clang::UnaryOperator::getOpcodeStr(unOp->getOpcode()).str(),
+                                                          globalRegion.st[assign_toRef->getDecl()->getNameAsString()],
+                                                          globalRegion.st[oprand->getDecl()->getNameAsString()],
+                                                          ValueInfo()));
+        } else if (auto *directRef = clang::dyn_cast<clang::DeclRefExpr>(assignWith)) {
           // Handle direct assignments (a = b)
           llvm::errs() << "-----Direct Assignment: \n";
           directRef->dump();
           llvm::errs() << assign_toRef->getDecl()->getNameAsString() << "\n";
           llvm::errs() << directRef->getDecl()->getNameAsString() << "\n";
           llvm::errs() << "-----Direct Assignment end\n";
-          globalRegion.instructions.push_back(Instruction(
-              "=", // Use assignment operator
-              globalRegion.st[assign_toRef->getDecl()->getNameAsString()],
-              globalRegion.st[directRef->getDecl()->getNameAsString()],
-              ValueInfo())); // No third operand needed for direct assignment
+          globalRegion.instructions.push_back(
+              Instruction("=",  // Use assignment operator
+                          globalRegion.st[assign_toRef->getDecl()->getNameAsString()],
+                          globalRegion.st[directRef->getDecl()->getNameAsString()],
+                          ValueInfo()));  // No third operand needed for direct assignment
         } else {
           // Invalid: Other forms
           std::string rhsStr;
           llvm::raw_string_ostream rhsOS(rhsStr);
-          assignWith->printPretty(rhsOS, nullptr,
-                                  clang::PrintingPolicy(clang::LangOptions()));
+          assignWith->printPretty(rhsOS, nullptr, clang::PrintingPolicy(clang::LangOptions()));
         }
-        return true; // done with this statement
+        return true;  // done with this statement
       }
       return true;
     }
@@ -207,64 +194,51 @@ public:
       llvm::errs() << "-----RET\n";
       ret->dump();
       assert(clang::dyn_cast<clang::DeclRefExpr>(ret));
-      auto retVarName = clang::dyn_cast<clang::DeclRefExpr>(ret)
-                            ->getDecl()
-                            ->getNameAsString();
-      ret_var =
-          ValueInfo(retVarName,
-                    getWidthFromType(clang::dyn_cast<clang::DeclRefExpr>(ret)
-                                         ->getDecl()
-                                         ->getType()
-                                         .getAsString()),
-                    VProp::OUTPUT, nullptr);
+      auto retVarName = clang::dyn_cast<clang::DeclRefExpr>(ret)->getDecl()->getNameAsString();
+      ret_var = ValueInfo(
+          retVarName, getWidthFromType(clang::dyn_cast<clang::DeclRefExpr>(ret)->getDecl()->getType().getAsString()),
+          VProp::OUTPUT, nullptr);
       return true;
     }
     return true;
   }
   bool TraverseDecl(clang::Decl *decl) {
-    depth++; // Entering a deeper level
-    bool result =
-        clang::RecursiveASTVisitor<ScMaskerASTVisitor>::TraverseDecl(decl);
+    depth++;  // Entering a deeper level
+    bool result = clang::RecursiveASTVisitor<ScMaskerASTVisitor>::TraverseDecl(decl);
     // llvm::errs() << "Call trav. decl.\n";
-    depth--; // Returning to the parent level
+    depth--;  // Returning to the parent level
     return result;
   }
 
   bool TraverseStmt(clang::Stmt *stmt) {
-
-    depth++; // Entering a deeper level
-    bool result =
-        clang::RecursiveASTVisitor<ScMaskerASTVisitor>::TraverseStmt(stmt);
+    depth++;  // Entering a deeper level
+    bool result = clang::RecursiveASTVisitor<ScMaskerASTVisitor>::TraverseStmt(stmt);
     // llvm::errs() << "Call trav. stmt.\n";
 
-    depth--; // Returning to the parent level
+    depth--;  // Returning to the parent level
     return result;
   }
 
-private:
+ private:
   // Helper to print a node with indentation based on depth
   void printIndented(const char *type, const clang::Stmt *stmt) {
-    llvm::errs().indent(depth * 2)
-        << type << " (" << stmt->getStmtClassName() << "): ";
-    stmt->printPretty(llvm::errs(), nullptr,
-                      clang::PrintingPolicy(clang::LangOptions()));
+    llvm::errs().indent(depth * 2) << type << " (" << stmt->getStmtClassName() << "): ";
+    stmt->printPretty(llvm::errs(), nullptr, clang::PrintingPolicy(clang::LangOptions()));
     llvm::errs() << "\n";
-    stmt->dump(); // Print raw declaration details
+    stmt->dump();  // Print raw declaration details
   }
 
   void printIndented(const char *type, const clang::Decl *decl) {
-    llvm::errs().indent(depth * 2)
-        << type << " (" << decl->getDeclKindName() << "): ";
+    llvm::errs().indent(depth * 2) << type << " (" << decl->getDeclKindName() << "): ";
     decl->print(llvm::errs(), clang::PrintingPolicy(clang::LangOptions()));
     llvm::errs() << "\n";
-    decl->dump(); // Print raw declaration details
+    decl->dump();  // Print raw declaration details
   }
 };
 
-
 // The "actual" main function is here
 class ScMaskerASTConsumer : public clang::ASTConsumer {
-public:
+ public:
   ScMaskerASTConsumer(clang::CompilerInstance &ci, llvm::StringRef file) {}
   void HandleTranslationUnit(clang::ASTContext &context) override {
     clang::TranslationUnitDecl *tuDecl = context.getTranslationUnitDecl();
@@ -274,7 +248,7 @@ public:
     llvm::errs() << "---DUMP---\n";
     globalRegion.dump();
 
-// Bit-blasting
+    // Bit-blasting
 
 #ifdef SCM_Z3_BLASTING_ENABLED
     // TODO: apply bit-blasting to sub-regions but not the global one!
@@ -316,27 +290,21 @@ public:
 
     llvm::errs() << "---COMPOSITE---\n";
     // pass the original arguments to make the order unchanged
-    FinalRegion{std::move(combinator)}.printAsCode("masked_func", ret_var,
-                                                   original_fparams);
+    FinalRegion{std::move(combinator)}.printAsCode("masked_func", ret_var, original_fparams);
   }
 };
 
 class ScMaskerFrontendAction : public clang::ASTFrontendAction {
-protected:
-  std::unique_ptr<clang::ASTConsumer>
-  CreateASTConsumer(clang::CompilerInstance &ci,
-                    llvm::StringRef file) override {
+ protected:
+  std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(clang::CompilerInstance &ci, llvm::StringRef file) override {
     return std::make_unique<ScMaskerASTConsumer>(ci, file);
   }
 };
 
-class ScMaskerFrontendActionFactory
-    : public clang::tooling::FrontendActionFactory {
-public:
+class ScMaskerFrontendActionFactory : public clang::tooling::FrontendActionFactory {
+ public:
   ScMaskerFrontendActionFactory() {}
-  std::unique_ptr<clang::FrontendAction> create() override {
-    return std::make_unique<ScMaskerFrontendAction>();
-  }
+  std::unique_ptr<clang::FrontendAction> create() override { return std::make_unique<ScMaskerFrontendAction>(); }
 };
 
 void divideAndPrintRegion(const Region &region) {
@@ -346,17 +314,19 @@ void divideAndPrintRegion(const Region &region) {
   while (!divider.done()) {
     Region subRegion = divider.next();
     if (!subRegion.isEnd()) {
-      subRegion.dump(); // Dump the sub-region
+      subRegion.dump();  // Dump the sub-region
     }
   }
 }
 
+void init() {}
+
 int main(int argc, const char **argv) {
+  init();
   auto argsParser = CommonOptionsParser::create(argc, argv, toolCategory);
 
   CommonOptionsParser &optionsParser = argsParser.get();
-  ClangTool tool(optionsParser.getCompilations(),
-                 optionsParser.getSourcePathList());
+  ClangTool tool(optionsParser.getCompilations(), optionsParser.getSourcePathList());
   auto af = std::make_unique<ScMaskerFrontendActionFactory>();
   auto result = tool.run(af.get());
 }

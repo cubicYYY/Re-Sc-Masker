@@ -1,8 +1,10 @@
 #include "MaskedRegion.hpp"
+
+#include <llvm-16/llvm/Support/raw_ostream.h>
+
 #include "DefUseRegion.hpp"
 #include "FinalRegion.hpp"
 #include "RegionDivider.hpp"
-#include <llvm-16/llvm/Support/raw_ostream.h>
 
 void TrivialMaskedRegion::dump() const {
   llvm::errs() << "\n(trivial masked)\n";
@@ -13,7 +15,7 @@ void TrivialMaskedRegion::dump() const {
   llvm::errs() << "\n----\n";
 }
 TrivialMaskedRegion::TrivialMaskedRegion(Region &originalRegion) {
-  assert(originalRegion.count() == 2); // original inst + region divider
+  assert(originalRegion.count() == 2);  // original inst + region divider
   region.st = originalRegion.st;
   // No instruments initially
   for (const auto &inst : originalRegion.instructions) {
@@ -21,20 +23,17 @@ TrivialMaskedRegion::TrivialMaskedRegion(Region &originalRegion) {
       region.instructions.push_back(inst);
       continue;
     }
-    auto maskedInsts = replaceInstruction(inst); // 1->n
-    region.instructions.insert(region.instructions.end(), maskedInsts.begin(),
-                               maskedInsts.end());
+    auto maskedInsts = replaceInstruction(inst);  // 1->n
+    region.instructions.insert(region.instructions.end(), maskedInsts.begin(), maskedInsts.end());
     outputs.insert(inst.assign_to);
   }
 }
 
-void TrivialMaskedRegion::issueNewInst(std::vector<Instruction> &newInsts,
-                                       std::string_view op, const ValueInfo &t,
+void TrivialMaskedRegion::issueNewInst(std::vector<Instruction> &newInsts, std::string_view op, const ValueInfo &t,
                                        const ValueInfo &a, const ValueInfo &b) {
   newInsts.emplace_back(op, t, a, b);
 }
-std::vector<Instruction>
-TrivialMaskedRegion::replaceInstruction(const Instruction &inst) {
+std::vector<Instruction> TrivialMaskedRegion::replaceInstruction(const Instruction &inst) {
   std::vector<Instruction> new_insts;
 
   const auto &A = inst.lhs;
@@ -43,7 +42,7 @@ TrivialMaskedRegion::replaceInstruction(const Instruction &inst) {
   const auto &assign_to = inst.assign_to;
 
   // TODO: avoid naming conflicts
-  if (inst.op=="//") {
+  if (inst.op == "//") {
     new_insts.push_back(inst);
     return new_insts;
   }
@@ -52,8 +51,7 @@ TrivialMaskedRegion::replaceInstruction(const Instruction &inst) {
   if (op == "|" || op == "||") {
     ValueInfo nA(assign_to.name + "ornA", 1, VProp::UNK, nullptr);
     ValueInfo nB(assign_to.name + "ornB", 1, VProp::UNK, nullptr);
-    ValueInfo andNN(assign_to.name + "orand", 1, VProp::MASKED,
-                    nullptr);
+    ValueInfo andNN(assign_to.name + "orand", 1, VProp::MASKED, nullptr);
     region.st[nA.name] = nA;
     region.st[nB.name] = nB;
     region.st[andNN.name] = andNN;
@@ -122,8 +120,7 @@ TrivialMaskedRegion::replaceInstruction(const Instruction &inst) {
     issueNewInst(new_insts, "^", assign_to, Tr3, r3);
 
     return new_insts;
-  }
-  else if (op == "^") {
+  } else if (op == "^") {
     // XOR: T=A^B ->
     // mA=A^r1;
     // mB=B^r2;
@@ -195,8 +192,7 @@ TrivialMaskedRegion::replaceInstruction(const Instruction &inst) {
     ValueInfo r3 = ValueInfo::getNewRand();
     ValueInfo mA(assign_to.name + "andmA", 1, VProp::MASKED, nullptr);
     ValueInfo mB(assign_to.name + "andmB", 1, VProp::MASKED, nullptr);
-    ValueInfo negmB(assign_to.name + "andneg1", 1, VProp::UNK,
-                    nullptr);
+    ValueInfo negmB(assign_to.name + "andneg1", 1, VProp::UNK, nullptr);
     ValueInfo mAr2(assign_to.name + "andr2", 1, VProp::UNK, nullptr);
     ValueInfo negr3(assign_to.name + "andneg2", r3.width, VProp::UNK, nullptr);
     ValueInfo tmp1(assign_to.name + "andtmp1", 1, VProp::UNK, nullptr);

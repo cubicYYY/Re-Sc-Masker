@@ -158,6 +158,7 @@ public:
         // Default:　do not change the instruction
         curRegion.instructions.push_back(inst);
       }
+      curRegion.st.insert(masked_region.region.st.begin(), masked_region.region.st.end());
     }
   }
   void printAsCode(std::string_view func_name, ValueInfo return_var,
@@ -167,8 +168,9 @@ public:
     // func decl
     llvm::outs() << "bool " << func_name << "(";
     bool isFirstParam = true;
+
+    // Find all params declared in the function signature...
     for (const auto &vname : original_fparams) {
-      // Find all params declared in the function signature
       if (isFirstParam) {
         isFirstParam = false;
       } else {
@@ -178,8 +180,11 @@ public:
                    << "=0"; // TODO: remove the default value
       // llvm::errs() << "origin:" << vname << "\n";
     }
+
+    // ...and those random variables introduced by us
     for (const auto &var : curRegion.st) {
       const auto &vi = var.second;
+      // Ignore those variables printed
       if (std::count(original_fparams.begin(), original_fparams.end(),
                      vi.name)) {
         continue;
@@ -201,6 +206,7 @@ public:
     }
     llvm::outs() << ")";
 
+    // Function body
     llvm::outs() << "{\n";
     // local variable decl
     for (const auto &tempVar : tempVars) {

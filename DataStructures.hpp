@@ -122,7 +122,7 @@ public:
 
   /// TODO: accept a SymbolTable ref to update
   static ValueInfo getNewRand() {
-    const size_t ID_START = 100;
+    const size_t ID_START = 10;
     static std::atomic<size_t> currentId{ID_START};
 
     std::string newName = "r" + std::to_string(currentId++);
