@@ -1,1 +1,1 @@
-git ls-files "*.cpp" "*.h" | grep -Ev "^(input/|output/)" | xargs clang-format -i
+git ls-files "src/*.c" "src/*.cpp" "src/*.h" "src/*.hpp" | xargs clang-format -i

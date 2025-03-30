@@ -42,3 +42,6 @@ desktop.ini
 
 # git conflict
 *.orig
+
+# outputs
+output/

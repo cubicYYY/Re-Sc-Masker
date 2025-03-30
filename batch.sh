@@ -12,7 +12,7 @@ for input_file in "$input_dir"/*.cpp; do
     
     output_file="$output_dir/$filename"
 
-    ./build/Re-SC-Masker "$input_file" > "$output_file"
+    ./build/Re-Sc-Masker "$input_file" > "$output_file"
     
     echo "Processed $input_file -> $output_file"
 done
