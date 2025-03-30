@@ -15,7 +15,7 @@ void TrivialMaskedRegion::dump() const {
   llvm::errs() << "\n----\n";
 }
 TrivialMaskedRegion::TrivialMaskedRegion(Region &originalRegion) {
-  assert(originalRegion.count() == 2);  // original inst + region divider
+  assert(originalRegion.count() == 2);  // original inst + region divider comment
   region.st = originalRegion.st;
   // No instruments initially
   for (const auto &inst : originalRegion.instructions) {

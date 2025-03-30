@@ -17,38 +17,9 @@ message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 message(STATUS "Clang include dirs: ${CLANG_INCLUDE_DIRS}")
 message(STATUS "Z3 Library: ${Z3_LIBRARIES}")
 
-# Ensure debug flags for Debug builds
 if(CMAKE_BUILD_TYPE MATCHES Debug)
     message(STATUS "Debug mode enabled")
     set(CMAKE_CXX_FLAGS_DEBUG "-g")
 endif()
 
-# Gather all .cpp files in the current directory
-file(GLOB SOURCES *.cpp)
-
-# Add executable with all gathered sources
-add_executable(Re-SC-Masker ${SOURCES})
-
-
-# Include LLVM and Clang headers
-target_include_directories(Re-SC-Masker PRIVATE
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-    ${Z3_CXX_INCLUDE_DIRS}
-)
-
-# Add LLVM and Clang definitions
-target_compile_definitions(Re-SC-Masker PRIVATE
-    ${LLVM_DEFINITIONS}
-)
-
-# Link against LLVM and Clang libraries
-target_link_libraries(Re-SC-Masker PRIVATE
-    LLVM
-    clangTooling
-    clangFrontend
-    clangAST
-    clangBasic
-    ${Z3_LIBRARIES}
-)
-
+add_subdirectory(src)

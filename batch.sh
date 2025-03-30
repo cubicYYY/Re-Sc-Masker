@@ -1,4 +1,6 @@
 #!/bin/bash
+# Run this batch script to mask all the input files in the input_dir.
+# The masked files will be saved in the output_dir.
 
 input_dir="./input"
 output_dir="./output"

@@ -1,56 +1,24 @@
-bool masked_func(bool k1=0,bool k2=0,bool k3=0,bool r104=0,bool r101=0,bool r102=0,bool r100=0,bool r103=0,bool r105=0){
-bool n2_unmask_n2andtmp6;
-bool n2_unmask_r104;
-bool n3_unmask_r100;
-bool n3_unmask_r101;
-bool n2_allmask_1;
-bool n3_allmask_1;
-bool n2andmA;
-bool n3notmA;
-bool n1xormA;
-bool n2andtmp6;
-bool n3notmT;
-bool n1xormT;
-bool n0;
-bool n2andneg2;
-bool n3;
-bool n2andneg1;
-bool n1;
-bool n2andmB;
-bool n2andr2;
-bool n2;
-bool n2andtmp1;
-bool n2andtmp2;
-bool n2andtmp3;
-bool n2andtmp4;
-bool n2andtmp5;
-bool n1xormR;
-bool n1xormB;
-n3notmA = k2^r100;
-n3notmT = !n3notmA;
-n3_allmask_1 = r101^r100;
-n3_unmask_r101 = n3_allmask_1^r101;
-n3_unmask_r100 = n3_allmask_1^r100;
-n3 = n3notmT^n3_unmask_r100;
-n2andmA = n3^n3_unmask_r101;
-n2andmB = k3^r102;
-n2andneg1 = !n2andmB;
-n2andr2 = n2andmA&&r102;
-n2andneg2 = !r103;
-n2andtmp1 = n2andneg1&&r103;
-n2andtmp2 = n2andmB&&n2andmA;
-n2andtmp3 = !n2andr2;
-n2andtmp4 = n2andneg2||r102;
-n2andtmp5 = n2andtmp1||n2andtmp2;
-n2andtmp6 = n2andtmp3^n2andtmp4;
-n2_allmask_1 = r104^n2andtmp6;
-n2_unmask_r104 = n2_allmask_1^r104;
-n2_unmask_n2andtmp6 = n2_allmask_1^n2andtmp6;
-n2 = n2andtmp5^n2_unmask_n2andtmp6;
-n1xormA = n2^n2_unmask_r104;
-n1xormB = k1^r105;
-n1xormT = n1xormA^n1xormB;
-n1xormR = r104^r105;
-n1 = n1xormR^n1xormT;
-return n1;
+bool masked_func(bool kk1=0,bool r12=0,bool r11=0,bool r10=0){
+bool n2notmA;
+bool n2notmT;
+bool n1notmA;
+bool n0notmA;
+bool n1notmT;
+bool n0notmT;
+n0notmA = kk1^r10;
+n0notmT = !n0notmA;
+//def:
+n0 = n0notmT^r11;
+//------region-----
+n1notmA = n0^r10;
+n1notmT = !n1notmA;
+//def:
+n1 = n1notmT^r12;
+//------region-----
+n2notmA = n1^r11;
+n2notmT = !n2notmA;
+//def:
+n2 = n2notmT^r12;
+//------region-----
+return n2;
 }

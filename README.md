@@ -7,18 +7,23 @@ Effectively prevents secret leakage through statistical attacks on intermediate 
 ## Usage
 
 ```bash
-# sudo apt install llvm llvm-dev clang clang-tools cmake ninja-build
+# Read the official manual to install Z3 library first.
+# https://github.com/Z3Prover/z3/blob/master/README.md#building-z3-using-cmake
+
+sudo apt install llvm llvm-dev clang clang-tools cmake ninja-build
 mkdir build
 cd ./build
 cmake ..
 make
-# ./Re-SC-Masker ../input/minimum.cpp > ../output/minimum.cpp
+
+# Verify it:
+./Re-SC-Masker ../input/minimum.cpp > ../output/minimum.cpp
 ```
 
-## Requirements
+## Limitations
 
-- SSA format: no re-assignment to the same variable
-- No constants
+- Must be inSSA format: no re-assignment to the same variable
+- No constants are allowed currently (you can replace it with a public parameter)
 
 ## Examples
 
@@ -33,6 +38,12 @@ Locate in `/input`(original programs) and `/output`(masked programs).
 - Unused local variables are problematic. You need to remove them.
 
 ## TODOs
+
+### Deployment
+
+- Docker
+
+### Functionalities
 
 - Support the move operation `a=b;`
 - Update SymbolTable while issuing a new instruction (instead of manual update)
