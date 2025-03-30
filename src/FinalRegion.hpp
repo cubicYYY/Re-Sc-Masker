@@ -113,7 +113,7 @@ public:
                     // New program:
                     // X=n^r2 // swapped
                     // n1=X^r1 // first use, do swapping, xor_diff[X]={r1,r2}
-                    // n2=X^r3; n=n^r1; X=n^r2; // new use
+                    // n2=X^r3; n2=n2^r1; n2=n2^r2; // new use
                     // (always add ^r3 before ^r1^r2, just like you need to add a new lock before removing old locks)
 
                     // Remember: only changes on def statement (of `X`) will have side-effects, so in this case the size
