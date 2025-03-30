@@ -16,8 +16,6 @@ public:
     FinalRegion() = default;
     FinalRegion(DefUseRegionType &&r) {
         llvm::errs() << "---Composition---\n";
-        // curRegion.st = r.region.st;
-        /// output##var ->random unmask
         std::map<std::string, ValueInfo> unmasks;
 
         // Pre-scan
@@ -33,15 +31,6 @@ public:
         }
         llvm::errs() << "----------\n";
 
-        /// For example, if we met the first use of X , like `n=X^r2`, then we need
-        /// to replace the def `X=n^r1` with `X=n^r2`, and the use becomes `X=n^r1`
-        /// (swapping). Then, xor_diff[X]={r1,r2}. So after the first use, when we
-        /// met a use "n=X^rx", we need to transform it into "n=X^(xor_diff[X]^rx)":
-        /// `X=n^r1` -> `X=n^r2`
-        /// `X=n^r2` -> `X=n^r1`
-        /// `X=n^r3` -> `X=n^r3;X=n^r1;X=n^r2;` (always use a new lock(^r3) before
-        /// unlock(^r1^r2)) The key to understand this: only changes on def
-        /// statement will have a global influence
         typename DefUseRegionType::XorMap xor_diff;
 
         /// Temp symbol table: var to latest def statement.
@@ -64,11 +53,6 @@ public:
 
 #ifdef SCM_GAP_FILLING_ENABLED
                 // IMPORTANT NOTE: We may have def+use like `t1=t2^r1`
-
-                // TODO: treat it as a Use of t2 at first.
-                // Then it becomes to `t1=t2^t1_all_unmask_r1`
-                // Then we add the "unmask" variable into t1's XOR-ed set
-                // Finally we treat it as a Def of t1.
 
                 auto assign_to = inst.assign_to.name;  // do not find the root of ref chain, since a
                                                        // new def will override this chain
@@ -114,35 +98,59 @@ public:
                         def_inst_ref.rhs = inst.rhs;
                         continue;
                     }
+                    // otherwise, we need to take the swapped RND var into account.
+                    // For example, if we met the first use of X , like `n=X^r2`, then we need
+                    // to replace the def `X=n^r1` with `n=X^r2`, and this use statement becomes `n=X^r1`
+                    // (swapping). Then, xor_diff[X]={r1,r2}.
+                    // However, after the first use, each time when we
+                    // met another use "n=X^rx", we need to transform it into "n=X^rx^(xor_diff[X])"
+                    // E.g.
+                    // Original program:
+                    // X=n^r1
+                    // n1=X^r2
+                    // n2=X^r3
+                    //
+                    // New program:
+                    // X=n^r2 // swapped
+                    // n1=X^r1 // first use, do swapping, xor_diff[X]={r1,r2}
+                    // n2=X^r3; n=n^r1; X=n^r2; // new use
+                    // (always add ^r3 before ^r1^r2, just like you need to add a new lock before removing old locks)
+
+                    // Remember: only changes on def statement (of `X`) will have side-effects, so in this case the size
+                    // of xor_diff[X]==2
                     const auto &diff = xor_diff[lhs_ref2];
                     assert(diff.size() == 2);
-                    curRegion.instructions.push_back(Instruction{"//", "---replaced"});
+                    curRegion.instructions.push_back(Instruction{"//", "{replaced(" + lhs_ref2 + "):"});
                     curRegion.instructions.push_back(inst);
                     for (const auto &d : diff) {
                         curRegion.instructions.push_back(
                             Instruction{"^", inst.assign_to, inst.assign_to, ValueInfo{d, 1, VProp::RND, nullptr}});
                     }
-                    curRegion.instructions.push_back(Instruction{"//", "---"});
+                    curRegion.instructions.push_back(Instruction{"//", ":replaced}"});
 
                     continue;
                 }
 
                 if (is_r_use) {                       // rhs is the output var: replace
                                                       // the lhs (random var)
-                    if (!xor_diff.count(rhs_ref2)) {  // first use: swapping
+                    if (!xor_diff.count(rhs_ref2)) {  // first use: just swap the RND var
                         Instruction &def_inst_ref = curRegion.instructions[var2def[rhs_ref2]];
                         xor_diff[rhs_ref2] = {lhs_ref2, def_inst_ref.rhs.name};
                         curRegion.instructions.push_back(Instruction{"^", inst.assign_to, def_inst_ref.lhs, inst.rhs});
                         def_inst_ref.lhs = inst.lhs;
                         continue;
                     }
+
                     const auto &diff = xor_diff[rhs_ref2];
                     assert(diff.size() == 2);
+
+                    curRegion.instructions.push_back(Instruction{"//", "{replaced(" + rhs_ref2 + "):"});
                     curRegion.instructions.push_back(inst);
                     for (const auto &d : diff) {
                         curRegion.instructions.push_back(
                             Instruction{"^", inst.assign_to, inst.assign_to, ValueInfo{d, 1, VProp::RND, nullptr}});
                     }
+                    curRegion.instructions.push_back(Instruction{"//", ":replaced}"});
 
                     continue;
                 }
@@ -177,12 +185,12 @@ public:
         // ...and those random variables introduced by us
         for (const auto &var : curRegion.st) {
             const auto &vi = var.second;
-            // Ignore those variables printed
+            // Ignore those variables printed in func head
             if (std::count(original_fparams.begin(), original_fparams.end(), vi.name)) {
                 continue;
             }
             // Find all params declared in the function signature
-            if ((vi.clangDecl && vi.clangDecl->getKind() == clang::Decl::ParmVar) || vi.prop == VProp::RND) {
+            if (vi.prop == VProp::RND) {
                 // llvm::errs() << "added:" << vi.name << "\n";
                 if (isFirstParam) {
                     isFirstParam = false;

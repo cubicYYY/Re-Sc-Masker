@@ -4,16 +4,16 @@
 
 class RegionDivider {};
 
-/// assign a region for each instruction
+/// simply assign a region for each instruction
 class TrivialRegionDivider : RegionDivider {
 public:
-    TrivialRegionDivider(const Region &r) : r(r), cur(0) {}
+    TrivialRegionDivider(const Region &global_region) : global_region(global_region), cur(0) {}
     /// Return the next region
     Region next();
 
     bool done() const;
 
 private:
-    Region r;
+    Region global_region;
     size_t cur;
 };

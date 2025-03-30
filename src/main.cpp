@@ -201,6 +201,28 @@ public:
                 VProp::OUTPUT, nullptr);
             return true;
         }
+        if (auto *declStmt = clang::dyn_cast<clang::DeclStmt>(stmt)) {
+            llvm::errs() << "-----DeclStmt\n";
+            declStmt->dump();
+
+            // Process each declaration in the statement
+            for (auto decl : declStmt->decls()) {
+                if (auto *varDecl = clang::dyn_cast<clang::VarDecl>(decl)) {
+                    std::string varName = varDecl->getNameAsString();
+                    std::string typeStr = varDecl->getType().getAsString();
+
+                    // Register the variable in the symbol table
+                    VProp prop = VProp::UNK;  // Default property for local variables
+                    int width = getWidthFromType(typeStr);
+
+                    // Create ValueInfo and add to symbol table
+                    globalRegion.st[varName] = ValueInfo{varName, width, prop, nullptr};
+
+                    llvm::errs() << "Internal variable: " << varName << " of type: " << typeStr << "\n";
+                }
+            }
+            llvm::errs() << "-----DeclStmt end\n";
+        }
         return true;
     }
     bool TraverseDecl(clang::Decl *decl) {
@@ -242,9 +264,11 @@ class ScMaskerASTConsumer : public clang::ASTConsumer {
 public:
     ScMaskerASTConsumer(clang::CompilerInstance &ci, llvm::StringRef file) {}
     void HandleTranslationUnit(clang::ASTContext &context) override {
-        clang::TranslationUnitDecl *tuDecl = context.getTranslationUnitDecl();
+        clang::TranslationUnitDecl *TUDecl = context.getTranslationUnitDecl();
         ScMaskerASTVisitor visitor;
-        visitor.TraverseDecl(tuDecl);
+
+        // Parse the original program
+        visitor.TraverseDecl(TUDecl);
 
         llvm::errs() << "---DUMP---\n";
         globalRegion.dump();
@@ -261,27 +285,18 @@ public:
         llvm::errs() << "Blasted insts: " << globalRegion.count() << "\n";
 #endif
 
-        // Replace each region with a masked region
+        // REPLACE phase: Replace each region with a masked region
         llvm::errs() << "---REPLACE---\n";
+
+        // Divide sub regions
+        using MaskedRegionT = TrivialMaskedRegion;
         TrivialRegionDivider divider(globalRegion);
-
-        DefUseRegion<TrivialMaskedRegion> combinator;
-        // combinator.region.st = globalRegion.st;
-
-        // Output Xor Set
-        llvm::errs() << "---OUTPUT Xor Set---\n";
-        for (const auto &[var, xorset] : combinator.output2xors) {
-            llvm::errs() << var << ": ";
-            for (const auto &xorvar : xorset) {
-                llvm::errs() << xorvar << " ";
-            }
-            llvm::errs() << "\n";
-        }
+        DefUseRegion<MaskedRegionT> combinator;  // TODO: use decltype
 
         auto region_id = 0;
         while (!divider.done()) {
             Region subRegion = divider.next();
-            TrivialMaskedRegion masked(subRegion);
+            MaskedRegionT masked(subRegion);
             llvm::errs() << "Masked: " + std::to_string(region_id++) + "\n";
             masked.dump();
             combinator.add(std::move(masked));
@@ -291,7 +306,11 @@ public:
 
         llvm::errs() << "---COMPOSITE---\n";
         // pass the original arguments to make the order unchanged
-        FinalRegion{std::move(combinator)}.printAsCode("masked_func", ret_var, original_fparams);
+        auto final = FinalRegion{std::move(combinator)};
+        // Insert global_region symbol table into final region
+        // (so that we will not miss explicitly declared temps in the original program)
+        final.curRegion.st.insert(globalRegion.st.begin(), globalRegion.st.end());
+        final.printAsCode("masked_func", ret_var, original_fparams);
     }
 };
 

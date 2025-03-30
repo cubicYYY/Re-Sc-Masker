@@ -25,15 +25,6 @@ public:
             llvm::errs() << out.name << " ";
         }
         llvm::errs() << "\n";
-        // print outputs2xors
-        // llvm::errs() << "output2xors: ";
-        // for (const auto &out : output2xors) {
-        //   llvm::errs() << out.first << ": ";
-        //   for (const auto &xorvar : out.second) {
-        //     llvm::errs() << xorvar.name << " ";
-        //   }
-        //   llvm::errs() << "\n";
-        // }
         llvm::errs() << "______\n";
         // FIXME: this should be changed if we are not masking trivially
         // We should only find those RND/UND vars at the first use or the final use
