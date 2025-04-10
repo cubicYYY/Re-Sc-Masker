@@ -11,10 +11,9 @@ Effectively prevents secret leakage through statistical attacks on intermediate 
 # https://github.com/Z3Prover/z3/blob/master/README.md#building-z3-using-cmake
 
 sudo apt install llvm llvm-dev clang clang-tools cmake ninja-build
-mkdir build
-cd ./build
-cmake ..
-make
+mkdir build 
+cmake -B build
+cmake --build build
 
 # Verify it:
 ./Re-SC-Masker ../input/minimum.cpp > ../output/minimum.cpp
@@ -22,8 +21,9 @@ make
 
 ## Limitations
 
-- Must be inSSA format: no re-assignment to the same variable
 - No constants are allowed currently (you can replace it with a public parameter)
+- Do not support branches (`if`)
+- TODO
 
 ## Examples
 
@@ -55,6 +55,17 @@ Locate in `/input`(original programs) and `/output`(masked programs).
 - Use Clang's declaration instead of class `Instruction`
 - `return` handled as a normal instruction
 - Less copying!
+
+## Dev Specification
+
+- Commits: [Conventional Commits](https://www.conventionalcommits.org/zh-hans/v1.0.0/)
+- Formatting: always run `run_clang_format.sh` before committing
+- Naming:
+    - Variables: `snake_case`
+    - Classes: `BigCamelCase`
+    - Functions: `smallCamelCase`
+
+## Implementation Details
 
 ## Declaration
 

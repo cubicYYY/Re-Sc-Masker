@@ -1,6 +1,6 @@
-#include "RegionDivider.hpp"
+#include "Re-Sc-Masker/RegionDivider.hpp"
 
-#include "DataStructures.hpp"
+#include "Re-Sc-Masker/Preludes.hpp"
 
 /// Return the next region
 Region TrivialRegionDivider::next() {

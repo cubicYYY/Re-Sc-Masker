@@ -1,4 +1,10 @@
+#include <clang/AST/Decl.h>
+#include <clang/AST/DeclBase.h>
+#include <clang/AST/Expr.h>
 #include <clang/AST/RecursiveASTVisitor.h>
+#include <clang/AST/Stmt.h>
+#include <clang/Tooling/CommonOptionsParser.h>
+#include <clang/Tooling/Tooling.h>
 #include <llvm-16/llvm/Support/raw_ostream.h>
 
 #include <cassert>
@@ -7,18 +13,12 @@
 #include <string>
 #include <vector>
 
-#include "DataStructures.hpp"
-#include "DefUseRegion.hpp"
-#include "FinalRegion.hpp"
-#include "MaskedRegion.hpp"
-#include "RegionDivider.hpp"
-#include "clang/AST/Decl.h"
-#include "clang/AST/DeclBase.h"
-#include "clang/AST/Expr.h"
-#include "clang/AST/Stmt.h"
-#include "clang/Tooling/CommonOptionsParser.h"
-#include "clang/Tooling/Tooling.h"
-#include "config.hpp"
+#include "Re-Sc-Masker/Config.hpp"
+#include "Re-Sc-Masker/DefUseRegion.hpp"
+#include "Re-Sc-Masker/Preludes.hpp"
+#include "Re-Sc-Masker/RegionConcatenater.hpp"
+#include "Re-Sc-Masker/RegionDivider.hpp"
+#include "Re-Sc-Masker/RegionMasker.hpp"
 
 using namespace clang::tooling;
 using namespace llvm;
@@ -289,7 +289,7 @@ public:
         llvm::errs() << "---REPLACE---\n";
 
         // Divide sub regions
-        using MaskedRegionT = TrivialMaskedRegion;
+        using MaskedRegionT = TrivialRegionMasker;
         TrivialRegionDivider divider(globalRegion);
         DefUseRegion<MaskedRegionT> combinator;  // TODO: use decltype
 
@@ -306,7 +306,7 @@ public:
 
         llvm::errs() << "---COMPOSITE---\n";
         // pass the original arguments to make the order unchanged
-        auto final = FinalRegion{std::move(combinator)};
+        auto final = RegionConcatenater{std::move(combinator)};
         // Insert global_region symbol table into final region
         // (so that we will not miss explicitly declared temps in the original program)
         final.curRegion.st.insert(globalRegion.st.begin(), globalRegion.st.end());

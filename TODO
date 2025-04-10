@@ -1,1 +1,3 @@
-If we found that a Z3 var refers to a RAND var, directly replace it!
+- If we found that a Z3 var refers to a RAND var, directly replace it!
+- Remove a symbol after the last use
+  - If it is not used at all then remove it directly

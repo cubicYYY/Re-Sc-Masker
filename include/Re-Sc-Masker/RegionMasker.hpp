@@ -5,16 +5,16 @@
 #include <unordered_set>
 #include <vector>
 
-#include "DataStructures.hpp"
+#include "Re-Sc-Masker/Preludes.hpp"
 
-class TrivialMaskedRegion;
+class TrivialRegionMasker;
 template <typename MaskedRegionType>
 class DefUseRegion;
 
 class MaskedRegion {};
-class TrivialMaskedRegion : MaskedRegion {
+class TrivialRegionMasker : MaskedRegion {
 public:
-    TrivialMaskedRegion(Region &originalRegion);
+    TrivialRegionMasker(Region &originalRegion);
     void dump() const;
 
 private:

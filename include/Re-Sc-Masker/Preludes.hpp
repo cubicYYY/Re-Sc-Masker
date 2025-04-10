@@ -7,8 +7,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
-
-#include "clang/AST/Decl.h"
+#include <clang/AST/Decl.h>
 
 // Helper function to convert a string to a valid variable name
 inline std::string toValidVarName(std::string_view str) {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "DataStructures.hpp"
+#include "Re-Sc-Masker/Preludes.hpp"
 
 class RegionDivider {};
 

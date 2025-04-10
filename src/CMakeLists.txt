@@ -4,6 +4,7 @@ add_executable(Re-Sc-Masker ${SOURCES})
 
 # Headers
 target_include_directories(Re-Sc-Masker PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
     ${LLVM_INCLUDE_DIRS}
     ${CLANG_INCLUDE_DIRS}
     ${Z3_CXX_INCLUDE_DIRS}

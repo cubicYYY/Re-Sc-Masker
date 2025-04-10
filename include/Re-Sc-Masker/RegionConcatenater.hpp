@@ -7,14 +7,14 @@
 #include <string_view>
 #include <unordered_map>
 
-#include "DataStructures.hpp"
-#include "config.hpp"
+#include "Re-Sc-Masker/Preludes.hpp"
+#include "Re-Sc-Masker/Config.hpp"
 
 template <typename DefUseRegionType>
-class FinalRegion {
+class RegionConcatenater {
 public:
-    FinalRegion() = default;
-    FinalRegion(DefUseRegionType &&r) {
+    RegionConcatenater() = default;
+    RegionConcatenater(DefUseRegionType &&r) {
         llvm::errs() << "---Composition---\n";
         std::map<std::string, ValueInfo> unmasks;
 

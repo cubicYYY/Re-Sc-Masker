@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "DataStructures.hpp"
+#include "Re-Sc-Masker/Preludes.hpp"
 
 class Z3VInfo;
 

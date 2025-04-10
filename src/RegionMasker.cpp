@@ -1,12 +1,12 @@
-#include "MaskedRegion.hpp"
+#include "Re-Sc-Masker/RegionMasker.hpp"
 
 #include <llvm-16/llvm/Support/raw_ostream.h>
 
-#include "DefUseRegion.hpp"
-#include "FinalRegion.hpp"
-#include "RegionDivider.hpp"
+#include "Re-Sc-Masker/DefUseRegion.hpp"
+#include "Re-Sc-Masker/RegionConcatenater.hpp"
+#include "Re-Sc-Masker/RegionDivider.hpp"
 
-void TrivialMaskedRegion::dump() const {
+void TrivialRegionMasker::dump() const {
     llvm::errs() << "\n(trivial masked)\n";
     region.dump();
     for (auto out : outputs) {
@@ -14,7 +14,7 @@ void TrivialMaskedRegion::dump() const {
     }
     llvm::errs() << "\n----\n";
 }
-TrivialMaskedRegion::TrivialMaskedRegion(Region &originalRegion) {
+TrivialRegionMasker::TrivialRegionMasker(Region &originalRegion) {
     assert(originalRegion.count() == 2);  // original inst + region divider comment
     region.st = originalRegion.st;
     // No instruments initially
@@ -29,11 +29,11 @@ TrivialMaskedRegion::TrivialMaskedRegion(Region &originalRegion) {
     }
 }
 
-void TrivialMaskedRegion::issueNewInst(std::vector<Instruction> &newInsts, std::string_view op, const ValueInfo &t,
+void TrivialRegionMasker::issueNewInst(std::vector<Instruction> &newInsts, std::string_view op, const ValueInfo &t,
                                        const ValueInfo &a, const ValueInfo &b) {
     newInsts.emplace_back(op, t, a, b);
 }
-std::vector<Instruction> TrivialMaskedRegion::replaceInstruction(const Instruction &inst) {
+std::vector<Instruction> TrivialRegionMasker::replaceInstruction(const Instruction &inst) {
     std::vector<Instruction> new_insts;
 
     const auto &A = inst.lhs;
@@ -66,13 +66,13 @@ std::vector<Instruction> TrivialMaskedRegion::replaceInstruction(const Instructi
 
         TrivialRegionDivider realDivided(realReplaced);
 
-        DefUseRegion<TrivialMaskedRegion> defuse;
+        DefUseRegion<TrivialRegionMasker> defuse;
         while (!realDivided.done()) {
             Region subRegion = realDivided.next();
-            defuse.add(TrivialMaskedRegion(subRegion));
+            defuse.add(TrivialRegionMasker(subRegion));
         }
 
-        FinalRegion res{std::move(defuse)};
+        RegionConcatenater res{std::move(defuse)};
         region.st.insert(res.curRegion.st.begin(), res.curRegion.st.end());
 
         return res.curRegion.instructions;

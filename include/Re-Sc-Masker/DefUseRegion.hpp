@@ -8,9 +8,9 @@
 #include <unordered_set>
 #include <vector>
 
-#include "DataStructures.hpp"
+#include "Re-Sc-Masker/Preludes.hpp"
 
-class TrivialMaskedRegion;
+class TrivialRegionMasker;
 
 template <typename MaskedRegionType>
 class DefUseRegion {
@@ -54,9 +54,6 @@ public:
 
             // Xor Def
             if (r.outputs.count(inst.assign_to)) {
-                // Should have not been declared
-                assert(!alias_edge.count(inst.assign_to.name) && "Re-declaration? This is invalid...");
-
                 // This def needs to be exposed to the next region
                 // FIXME: Currently we assume that every output var will be used.
                 llvm::errs() << "DEF:" << inst.assign_to.name << "\n";

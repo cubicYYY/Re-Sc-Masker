@@ -1,4 +1,4 @@
-#include "BitBlast.hpp"
+#include "Re-Sc-Masker/BitBlast.hpp"
 
 #include <llvm-16/llvm/Support/raw_ostream.h>
 #include <z3++.h>
@@ -8,7 +8,7 @@
 #include <string>
 #include <utility>
 
-#include "DataStructures.hpp"
+#include "Re-Sc-Masker/Preludes.hpp"
 
 // FIXME: For multiple regions, we may need to re-assemble bits of a temporary
 // variable before passing it to the next region. Of course that will cause
