@@ -2,7 +2,7 @@
 
 #include <llvm-16/llvm/Support/raw_ostream.h>
 
-#include "Re-Sc-Masker/DefUseRegion.hpp"
+#include "Re-Sc-Masker/RegionCollector.hpp"
 #include "Re-Sc-Masker/RegionConcatenater.hpp"
 #include "Re-Sc-Masker/RegionDivider.hpp"
 
@@ -66,7 +66,7 @@ std::vector<Instruction> TrivialRegionMasker::replaceInstruction(const Instructi
 
         TrivialRegionDivider realDivided(realReplaced);
 
-        DefUseRegion<TrivialRegionMasker> defuse;
+        RegionCollector<TrivialRegionMasker> defuse;
         while (!realDivided.done()) {
             Region subRegion = realDivided.next();
             defuse.add(TrivialRegionMasker(subRegion));

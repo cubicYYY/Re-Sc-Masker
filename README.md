@@ -16,7 +16,7 @@ cmake -B build
 cmake --build build
 
 # Verify it:
-./Re-SC-Masker ../input/minimum.cpp > ../output/minimum.cpp
+build/Re-Sc-Masker input/minimum.cpp > output/minimum.cpp
 ```
 
 ## Limitations

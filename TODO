@@ -1,3 +1,5 @@
 - If we found that a Z3 var refers to a RAND var, directly replace it!
 - Remove a symbol after the last use
   - If it is not used at all then remove it directly
+- Allow multiple assignments to a var (update-able symbol table)
+- Allow removing var out-of-scope from the symbol table

@@ -12,11 +12,11 @@
 
 class TrivialRegionMasker;
 
-template <typename MaskedRegionType>
-class DefUseRegion {
+template <typename RegionMaskerType>
+class RegionCollector {
 public:
-    DefUseRegion() = default;
-    void add(MaskedRegionType &&r) {
+    RegionCollector() = default;
+    void add(RegionMaskerType &&r) {
         llvm::errs() << "ADDING:\n";
         // r.dump();
         // Print outputs
@@ -154,7 +154,7 @@ public:
     using XorMap = std::unordered_map<std::string, StrSet>;
 
     // all regions
-    std::vector<MaskedRegionType> regions;
+    std::vector<RegionMaskerType> regions;
 
     // each region's defs
     // std::vector<ValueSet> defs;

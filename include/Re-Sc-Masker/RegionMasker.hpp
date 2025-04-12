@@ -8,11 +8,13 @@
 #include "Re-Sc-Masker/Preludes.hpp"
 
 class TrivialRegionMasker;
-template <typename MaskedRegionType>
-class DefUseRegion;
 
-class MaskedRegion {};
-class TrivialRegionMasker : MaskedRegion {
+template <typename RegionMaskerType>
+class RegionCollector;
+
+class RegionMasker {};
+
+class TrivialRegionMasker : RegionMasker {
 public:
     TrivialRegionMasker(Region &originalRegion);
     void dump() const;

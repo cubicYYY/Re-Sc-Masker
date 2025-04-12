@@ -13,9 +13,10 @@
 #include <string>
 #include <vector>
 
+#include "Re-Sc-Masker/BitBlastPass.hpp"
 #include "Re-Sc-Masker/Config.hpp"
-#include "Re-Sc-Masker/DefUseRegion.hpp"
 #include "Re-Sc-Masker/Preludes.hpp"
+#include "Re-Sc-Masker/RegionCollector.hpp"
 #include "Re-Sc-Masker/RegionConcatenater.hpp"
 #include "Re-Sc-Masker/RegionDivider.hpp"
 #include "Re-Sc-Masker/RegionMasker.hpp"
@@ -276,13 +277,13 @@ public:
         // Bit-blasting
 
 #ifdef SCM_Z3_BLASTING_ENABLED
-        // TODO: apply bit-blasting to sub-regions but not the global one!
-        llvm::errs() << "---Bit-Blast(Global)---\n";
-        // FIXME: get the correct ValueInfo of the returned value!
-        auto blasted = BitBlastPass(globalRegion.st, ret_var);
-        blasted.add(std::move(globalRegion));
+        llvm::errs() << "---Before Bit-Blasting---\n";
+        globalRegion.dump();
+
+        llvm::errs() << "---Bit-Blast(Per Instr.)---\n";
+        auto blasted = BitBlastPass(ret_var, std::move(globalRegion));
         globalRegion = blasted.get();
-        llvm::errs() << "Blasted insts: " << globalRegion.count() << "\n";
+        globalRegion.dump();
 #endif
 
         // REPLACE phase: Replace each region with a masked region
@@ -291,7 +292,7 @@ public:
         // Divide sub regions
         using MaskedRegionT = TrivialRegionMasker;
         TrivialRegionDivider divider(globalRegion);
-        DefUseRegion<MaskedRegionT> combinator;  // TODO: use decltype
+        RegionCollector<MaskedRegionT> combinator;  // TODO: use decltype
 
         auto region_id = 0;
         while (!divider.done()) {

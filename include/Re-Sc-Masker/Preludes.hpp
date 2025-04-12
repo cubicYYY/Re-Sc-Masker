@@ -154,13 +154,13 @@ public:
     Instruction() {}
 
     Instruction(std::string_view op, std::string_view content)
-        : op(op), assign_to(ValueInfo{content, 0, VProp::PUB, nullptr}), lhs(ValueInfo{}), rhs(ValueInfo{}) {}
+        : op(op), assign_to(ValueInfo{content, 0, VProp::PUB, nullptr}), lhs(ValueInfo{}), rhs(ValueInfo{}) {} // TODO: check if a binary op lacks the right hand side operand
 
     Instruction(std::string_view op, ValueInfo assign_to, ValueInfo lhs, ValueInfo rhs)
         : op(op), assign_to(assign_to), lhs(lhs), rhs(rhs) {}
 
     void dump() const { llvm::errs() << toString() << "\n"; }
-    std::string toString() const {
+    inline std::string toString() const {
         if (op == "/z3|=/") {
             return assign_to.name + " |= " + lhs.name + " << " + rhs.name + ";";
         }
@@ -173,11 +173,15 @@ public:
         if (op == "//") {
             return op + assign_to.name;
         }
-        if (rhs.isNone()) {
+        if (isUnaryOp()) {
             // Unary op
             return assign_to.name + " = " + op + lhs.name + ";";
         }
         return assign_to.name + " = " + lhs.name + op + rhs.name + ";";
+    }
+
+    inline bool isUnaryOp() const {
+        return rhs.isNone();
     }
 
 public:
@@ -187,12 +191,13 @@ public:
 class Region {
 public:
     Region() {}
+    Region(const SymbolTable &st): st(st) {}
 
     size_t count() const { return instructions.size(); }
     static const Region end() { return Region(); }
     bool isEnd() { return (count() == 0); }
 
-    void dump() const {
+    inline void dump() const {
         llvm::errs() << "Region Debug Info:\n";
 
         // Dump instructions
