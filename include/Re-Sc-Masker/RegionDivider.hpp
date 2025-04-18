@@ -2,7 +2,7 @@
 
 #include "Re-Sc-Masker/Preludes.hpp"
 
-class RegionDivider {};
+class RegionDivider : private NonCopyable<RegionDivider> {};
 
 /// simply assign a region for each instruction
 class TrivialRegionDivider : RegionDivider {

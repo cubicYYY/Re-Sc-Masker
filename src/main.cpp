@@ -66,7 +66,7 @@ public:
                     } else {
                         prop = VProp::PUB;
                     }
-                    original_fparams.push_back(varName);
+                    original_fparams.emplace_back(varName);
                 } else {
                     prop = VProp::UNK;
                 }
@@ -76,7 +76,7 @@ public:
                 int width = getWidthFromType(type.getAsString());  // default width
 
                 auto vi = ValueInfo(varName, width, prop, varDecl);
-                globalRegion.st[varName] = vi;
+                globalRegion.sym_tbl[varName] = vi;
 
                 llvm::errs() << "ST inserted:" << varName << " " << toString(prop) << "\n";
                 varDecl->dump();
@@ -118,26 +118,26 @@ public:
                 assert(wrappedAssignWith != nullptr);
 
                 // // Extract actual operands, unwrapping implicit casts if needed
-                auto assign_to = unfold(wrappedAssignTo);
+                auto res = unfold(wrappedAssignTo);
                 auto assignWith = unfold(wrappedAssignWith);
-                assert(assign_to != nullptr);
+                assert(res != nullptr);
                 assert(assignWith != nullptr);
                 llvm::errs() << "....";
-                assign_to->dump();
+                res->dump();
                 llvm::errs() << "====";
                 assignWith->dump();
 
-                auto *assign_toRef = clang::dyn_cast<clang::DeclRefExpr>(assign_to);
-                if (assign_toRef) {
-                    llvm::errs() << assign_toRef->getNameInfo().getAsString() << "\n";
+                auto *resRef = clang::dyn_cast<clang::DeclRefExpr>(res);
+                if (resRef) {
+                    llvm::errs() << resRef->getNameInfo().getAsString() << "\n";
                 } else {
-                    llvm::errs() << "NO! " << assign_toRef->getNameInfo().getAsString() << "\n";
+                    llvm::errs() << "NO! " << resRef->getNameInfo().getAsString() << "\n";
                     return false;  // FAILED
                 }
                 // Get the LHS variable
                 std::string lhsStr;
                 llvm::raw_string_ostream lhsOS(lhsStr);
-                assign_to->printPretty(lhsOS, nullptr, clang::PrintingPolicy(clang::LangOptions()));
+                res->printPretty(lhsOS, nullptr, clang::PrintingPolicy(clang::LangOptions()));
 
                 // Check the expression
                 if (auto *nestedBinOp = clang::dyn_cast<clang::BinaryOperator>(assignWith)) {
@@ -151,11 +151,10 @@ public:
                     oprand1->dump();
                     oprand2->dump();
                     llvm::errs() << "-----BINOP end\n";
-                    globalRegion.instructions.push_back(
-                        Instruction(clang::BinaryOperator::getOpcodeStr(nestedBinOp->getOpcode()).str(),
-                                    globalRegion.st[assign_toRef->getDecl()->getNameAsString()],
-                                    globalRegion.st[oprand1->getDecl()->getNameAsString()],
-                                    globalRegion.st[oprand2->getDecl()->getNameAsString()]));
+                    globalRegion.insts.emplace_back(clang::BinaryOperator::getOpcodeStr(nestedBinOp->getOpcode()).str(),
+                                                    globalRegion.sym_tbl[resRef->getDecl()->getNameAsString()],
+                                                    globalRegion.sym_tbl[oprand1->getDecl()->getNameAsString()],
+                                                    globalRegion.sym_tbl[oprand2->getDecl()->getNameAsString()]);
                 } else if (auto *unOp = clang::dyn_cast<clang::UnaryOperator>(assignWith)) {
                     // UOP: C = op A
                     llvm::errs() << "-----UOP Assignment: \n";
@@ -164,22 +163,21 @@ public:
                     assert(oprand);
                     oprand->dump();
                     llvm::errs() << "-----UOP end\n";
-                    globalRegion.instructions.push_back(
-                        Instruction(clang::UnaryOperator::getOpcodeStr(unOp->getOpcode()).str(),
-                                    globalRegion.st[assign_toRef->getDecl()->getNameAsString()],
-                                    globalRegion.st[oprand->getDecl()->getNameAsString()], ValueInfo()));
+                    globalRegion.insts.emplace_back(clang::UnaryOperator::getOpcodeStr(unOp->getOpcode()).str(),
+                                                    globalRegion.sym_tbl[resRef->getDecl()->getNameAsString()],
+                                                    globalRegion.sym_tbl[oprand->getDecl()->getNameAsString()],
+                                                    ValueInfo());
                 } else if (auto *directRef = clang::dyn_cast<clang::DeclRefExpr>(assignWith)) {
                     // Handle direct assignments (a = b)
                     llvm::errs() << "-----Direct Assignment: \n";
                     directRef->dump();
-                    llvm::errs() << assign_toRef->getDecl()->getNameAsString() << "\n";
+                    llvm::errs() << resRef->getDecl()->getNameAsString() << "\n";
                     llvm::errs() << directRef->getDecl()->getNameAsString() << "\n";
                     llvm::errs() << "-----Direct Assignment end\n";
-                    globalRegion.instructions.push_back(
-                        Instruction("=",  // Use assignment operator
-                                    globalRegion.st[assign_toRef->getDecl()->getNameAsString()],
-                                    globalRegion.st[directRef->getDecl()->getNameAsString()],
-                                    ValueInfo()));  // No third operand needed for direct assignment
+                    globalRegion.insts.emplace_back("=",  // Use assignment operator
+                                                    globalRegion.sym_tbl[resRef->getDecl()->getNameAsString()],
+                                                    globalRegion.sym_tbl[directRef->getDecl()->getNameAsString()],
+                                                    ValueInfo());  // No third operand needed for direct assignment
                 } else {
                     // Invalid: Other forms
                     std::string rhsStr;
@@ -217,7 +215,7 @@ public:
                     int width = getWidthFromType(typeStr);
 
                     // Create ValueInfo and add to symbol table
-                    globalRegion.st[varName] = ValueInfo{varName, width, prop, nullptr};
+                    globalRegion.sym_tbl[varName] = ValueInfo{varName, width, prop, nullptr};
 
                     llvm::errs() << "Internal variable: " << varName << " of type: " << typeStr << "\n";
                 }
@@ -292,7 +290,7 @@ public:
         // Divide sub regions
         using MaskedRegionT = TrivialRegionMasker;
         TrivialRegionDivider divider(globalRegion);
-        RegionCollector<MaskedRegionT> combinator;  // TODO: use decltype
+        RegionCollector<MaskedRegionT> combinator;
 
         auto region_id = 0;
         while (!divider.done()) {
@@ -310,7 +308,7 @@ public:
         auto final = RegionConcatenater{std::move(combinator)};
         // Insert global_region symbol table into final region
         // (so that we will not miss explicitly declared temps in the original program)
-        final.curRegion.st.insert(globalRegion.st.begin(), globalRegion.st.end());
+        final.curRegion.sym_tbl.insert(globalRegion.sym_tbl.begin(), globalRegion.sym_tbl.end());
         final.printAsCode("masked_func", ret_var, original_fparams);
     }
 };

@@ -15,7 +15,10 @@ class TrivialRegionMasker;
 template <typename RegionMaskerType>
 class RegionCollector {
 public:
-    RegionCollector() = default;
+    explicit RegionCollector() = default;
+    RegionCollector(RegionCollector &&) = delete;
+    RegionCollector(const RegionCollector &) = delete;
+
     void add(RegionMaskerType &&r) {
         llvm::errs() << "ADDING:\n";
         // r.dump();
@@ -26,11 +29,11 @@ public:
         }
         llvm::errs() << "\n";
         llvm::errs() << "______\n";
-        // FIXME: this should be changed if we are not masking trivially
-        // We should only find those RND/UND vars at the first use or the final use
-        // in each region
 
         // Check all outputs
+        // FIXME: we shall not throw all vars into outputs set
+        // We should only find those RND/UND vars at the first use or the final use
+        // in each region
         llvm::errs() << "\n=====Checking outputs:\n";
         for (const auto &out : r.outputs) {
             llvm::errs() << out.name << "\n";
@@ -40,45 +43,42 @@ public:
         // Scan and collect XorS
         XorMap regional_xored_vars;
 
-        for (const auto &inst : r.region.instructions) {
+        for (const auto &inst : r.region.insts) {
             // Alias
             if (inst.op == "=") {
-                llvm::errs() << "Alias:" << inst.assign_to.name << " = " << inst.lhs.name << "\n";
+                llvm::errs() << "Alias:" << inst.res.name << " = " << inst.lhs.name << "\n";
                 // Find root by following the reference chain
                 std::string root = inst.lhs.name;
                 while (alias_edge.count(root) && root != alias_edge[root]) {
                     root = alias_edge[root];
                 }
-                alias_edge[inst.assign_to.name] = root;
+                alias_edge[inst.res.name] = root;
             }
 
             // Xor Def
-            if (r.outputs.count(inst.assign_to)) {
+            if (r.outputs.count(inst.res)) {
                 // This def needs to be exposed to the next region
-                // FIXME: Currently we assume that every output var will be used.
-                llvm::errs() << "DEF:" << inst.assign_to.name << "\n";
+                // FIXME: currently we assume that every output var will be used.
+                llvm::errs() << "DEF:" << inst.res.name << "\n";
                 inst.dump();
                 if (inst.op != "^") {
                     continue;
                 }
-                // FIXME:
-                // assert(inst.lhs.prop == VProp::RND || inst.rhs.prop == VProp::RND);
-                // FIXME:
-                // We should ensure that only the first def of a var in a region should
+                // FIXME: assert(inst.lhs.prop == VProp::RND || inst.rhs.prop == VProp::RND);
+                // FIXME: We should ensure that only the first def of a var in a region should
                 // be considered. Currently we dont check this since no re-declaration
                 // happens for trivial masking strategy.
 
                 // We prefer the right side if both side is RAND.
                 const auto &rand_oprand =
                     (inst.lhs.prop == VProp::RND ? (inst.rhs.prop == VProp::RND ? inst.rhs : inst.lhs) : inst.rhs);
-                regional_xored_vars[inst.assign_to.name].insert(rand_oprand.name);
-                alias_edge[inst.assign_to.name] = inst.assign_to.name;  // t->t should also be added
+                regional_xored_vars[inst.res.name].insert(rand_oprand.name);
+                alias_edge[inst.res.name] = inst.res.name;  // t->t should also be added
                 continue;
             }
 
             // Xor Use
-            // FIXME:
-            // We should ensure that only the first use of a var in a region should
+            // FIXME: We should ensure that only the first use of a var in a region should
             // be considered. Currently we dont check this since no re-declaration
             // happens for trivial masking strategy. So this flag var is not used.
             // So this should be evaluated in MaskedRegion !!!
@@ -123,12 +123,10 @@ public:
             output2xors[var].insert(xorset.begin(), xorset.end());
         }
 
-        regions.push_back(r);
-        // defs.push_back(ValueSet{});
-        // uses.push_back(ValueSet{});
+        regions.emplace_back(std::move(r));
     }
 
-    void dump() {
+    void dump() const {
         llvm::errs() << "\n- Regions:\n";
         for (const auto &r : regions) {
             r.dump();

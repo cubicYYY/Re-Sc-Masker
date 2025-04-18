@@ -8,9 +8,8 @@ Region TrivialRegionDivider::next() {
     if (cur == global_region.count()) {
         return result;  // end.
     }
-    auto const &curInst = global_region.instructions[cur];
-    result.instructions.push_back(curInst);
-    result.instructions.push_back(Instruction("//", "------region-----"));
+    result.insts.emplace_back(global_region.insts[cur]);
+    result.insts.emplace_back("//", "------region-----");
     cur++;
     return result;
 }

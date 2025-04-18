@@ -17,9 +17,15 @@ std::uint32_t Z3VInfo::max_topo_id = 0;
 // redundant assembling.
 // (but it is a good start)
 BitBlastPass::BitBlastPass(const ValueInfo &ret, Region &&origin_region) {
-    auto &st = origin_region.st;
-    blasted_region.st = st;
+    auto &st = origin_region.sym_tbl;
+    blasted_region.sym_tbl = st;
+
+    // Calculate topo sort id of each var,
+    // this process is essential when transforming an equivalence in SMT solver
+    // (e.g. `a==b`) into an assignment `a=b` or `b=a` (the one with smaller topo sort id should be RHS).
     calc_topo(origin_region);
+
+    // TODO: blast var to bits for fparams.
 
     llvm::errs() << "===BitBlastPass: started===\n";
     // Iterate over all vars to register bits in all variables
@@ -76,7 +82,7 @@ BitBlastPass::BitBlastPass(const ValueInfo &ret, Region &&origin_region) {
     optimize_tactic = simplify & bit_blast & simplify_again;
 
     // Bit-blast each instructions
-    for (auto &inst : std::exchange(origin_region.instructions, {})) {
+    for (auto &&inst : std::exchange(origin_region.insts, {})) {
         blast(std::move(inst));
     }
 }
@@ -88,15 +94,15 @@ BitBlastPass::BitBlastPass(const ValueInfo &ret, Region &&origin_region) {
 /// This is essentially a simplified way to encode data dependencies,
 /// and it works because of the linearity of crypto programs
 void BitBlastPass::calc_topo(const Region &r) {
-    for (const auto &inst : r.instructions) {
+    for (const auto &inst : r.insts) {
         if (inst.isUnaryOp()) {
-            var_topo[inst.assign_to] = var_topo[inst.lhs] + 1;
+            var_topo[inst.res] = var_topo[inst.lhs] + 1;
         } else {
             auto ltopo = var_topo[inst.lhs];
             auto rtopo = var_topo[inst.rhs];
-            var_topo[inst.assign_to] = std::max(ltopo, rtopo) + 1;
+            var_topo[inst.res] = std::max(ltopo, rtopo) + 1;
         }
-        llvm::errs() << inst.assign_to.name << ": tid=" << var_topo[inst.assign_to] << "\n";
+        llvm::errs() << inst.res.name << ": tid=" << var_topo[inst.res] << "\n";
     }
 }
 
@@ -108,42 +114,42 @@ void BitBlastPass::blast(Instruction &&inst) {
     z3::goal goal{z3ctx};
     if (inst.op == "=") {
         // Assign operation: a = b
-        auto target_expr = var_expr[inst.assign_to].value();
+        auto target_expr = var_expr[inst.res].value();
         auto left_expr = var_expr[inst.lhs].value();
         goal.add(target_expr == left_expr);
     } else if (inst.op == "^") {
         auto left_expr = var_expr[inst.lhs].value();
         auto right_expr = var_expr[inst.rhs].value();
-        auto target_expr = var_expr[inst.assign_to].value();
+        auto target_expr = var_expr[inst.res].value();
         goal.add(target_expr == (left_expr ^ right_expr));
     } else if (inst.op == "|") {
         auto left_expr = var_expr[inst.lhs].value();
         auto right_expr = var_expr[inst.rhs].value();
-        auto target_expr = var_expr[inst.assign_to].value();
+        auto target_expr = var_expr[inst.res].value();
         goal.add(target_expr == (left_expr | right_expr));
     } else if (inst.op == "&") {
         auto left_expr = var_expr[inst.lhs].value();
         auto right_expr = var_expr[inst.rhs].value();
-        auto target_expr = var_expr[inst.assign_to].value();
+        auto target_expr = var_expr[inst.res].value();
         goal.add(target_expr == (left_expr & right_expr));
     } else if (inst.op == "~") {
         auto left_expr = var_expr[inst.lhs].value();
-        auto target_expr = var_expr[inst.assign_to].value();
+        auto target_expr = var_expr[inst.res].value();
         goal.add(target_expr == (~left_expr));
     } else if (inst.op == "*") {
         auto left_expr = var_expr[inst.lhs].value();
         auto right_expr = var_expr[inst.rhs].value();
-        auto target_expr = var_expr[inst.assign_to].value();
+        auto target_expr = var_expr[inst.res].value();
         goal.add(target_expr == (left_expr * right_expr));
     } else if (inst.op == "+") {
         auto left_expr = var_expr[inst.lhs].value();
         auto right_expr = var_expr[inst.rhs].value();
-        auto target_expr = var_expr[inst.assign_to].value();
+        auto target_expr = var_expr[inst.res].value();
         goal.add(target_expr == (left_expr + right_expr));
     } else if (inst.op == "-") {
         auto left_expr = var_expr[inst.lhs].value();
         auto right_expr = var_expr[inst.rhs].value();
-        auto target_expr = var_expr[inst.assign_to].value();
+        auto target_expr = var_expr[inst.res].value();
         goal.add(target_expr == (left_expr - right_expr));
     } else if (inst.op == "!") {
         llvm::errs() << "Not implemented: " << inst.op << "\n";
@@ -173,27 +179,26 @@ Z3VInfo BitBlastPass::traverseZ3Model(const z3::expr &e, int depth) {
         auto oprand = traverseZ3Model(e.arg(0), depth + 1);
 
         if (depth == 1) {  // Rewrite `a = (v==expr / expr == v)` to `tmp=expr; v=!tmp;`
-            auto lhs = blasted_region.instructions.back().lhs;
-            auto rhs = blasted_region.instructions.back().rhs;
+            auto lhs = blasted_region.insts.back().lhs;
+            auto rhs = blasted_region.insts.back().rhs;
             auto new_var_name = Z3VInfo::getNewName();
             auto new_var = ValueInfo{new_var_name, width, VProp::UNK, nullptr};
-            blasted_region.st[new_var_name] = new_var;
+            blasted_region.sym_tbl[new_var_name] = new_var;
             // FIXME: We need to know which side should be the expr, and which side
             // should be the v
-            auto origin_var = blasted_region.instructions.back().rhs;
-            blasted_region.instructions.back() =
-                Instruction{"=", new_var, blasted_region.instructions.back().lhs, ValueInfo{}};
-            blasted_region.instructions.emplace_back(Instruction{"!", origin_var, new_var, ValueInfo{}});
+            auto origin_var = blasted_region.insts.back().rhs;
+            blasted_region.insts.back() = Instruction{"=", new_var, blasted_region.insts.back().lhs, ValueInfo{}};
+            blasted_region.insts.emplace_back(Instruction{"!", origin_var, new_var, ValueInfo{}});
             return Z3VInfo(new_var_name, Z3VType::Other);
         }
 
         std::string temp_name = Z3VInfo::getNewName();
         auto new_var = ValueInfo{temp_name, width, VProp::UNK, nullptr};
-        blasted_region.st[temp_name] = new_var;
+        blasted_region.sym_tbl[temp_name] = new_var;
         // Use `!` instead of `~` for boolean variables!
         llvm::errs() << "New inst. depth:" << depth << " op~!\n";
-        blasted_region.instructions.emplace_back(Instruction{
-            width == 1 ? "!" : "~", new_var, ValueInfo{oprand.name, width, VProp::UNK, nullptr}, ValueInfo{}});
+        blasted_region.insts.emplace_back(Instruction{width == 1 ? "!" : "~", new_var,
+                                                      ValueInfo{oprand.name, width, VProp::UNK, nullptr}, ValueInfo{}});
 
         return Z3VInfo(temp_name, Z3VType::Other);
     } else if (e.is_app()) {
@@ -214,7 +219,7 @@ Z3VInfo BitBlastPass::traverseZ3Model(const z3::expr &e, int depth) {
                 auto alias_name = "k!" + std::to_string(alias_id);
                 auto origin_name = e.arg(0).decl().name().str();
                 auto origin_var = origin_name.substr(0, origin_name.find('#'));
-                auto origin_prop = blasted_region.st[origin_var].prop;
+                auto origin_prop = blasted_region.sym_tbl[origin_var].prop;
 
                 alias_of[alias_id] = origin_name;
                 z3alias[origin_name] = alias_id;
@@ -222,7 +227,7 @@ Z3VInfo BitBlastPass::traverseZ3Model(const z3::expr &e, int depth) {
                 llvm::errs() << alias_id << " (alias)\n";
 
                 // The property of the alias is the same as the origin variable
-                blasted_region.st[alias_name] = ValueInfo{alias_name, 1, origin_prop, nullptr};
+                blasted_region.sym_tbl[alias_name] = ValueInfo{alias_name, 1, origin_prop, nullptr};
                 return Z3VInfo{"!ALIAS", Z3VType::Other};
             }
             if (e.arg(1).is_const() && e.arg(1).decl().name().kind() == Z3_STRING_SYMBOL) {  // lhs
@@ -230,13 +235,13 @@ Z3VInfo BitBlastPass::traverseZ3Model(const z3::expr &e, int depth) {
                 auto alias_name = "k!" + std::to_string(alias_id);
                 auto origin_name = e.arg(1).decl().name().str();
                 auto origin_var = origin_name.substr(0, origin_name.find('#'));
-                auto origin_prop = blasted_region.st[origin_var].prop;
+                auto origin_prop = blasted_region.sym_tbl[origin_var].prop;
 
                 alias_of[alias_id] = origin_name;
                 z3alias[origin_name] = alias_id;
                 llvm::errs() << "alias_of[" << alias_id << "] = " << origin_name << "\n";
                 llvm::errs() << alias_id << " (alias)\n";
-                blasted_region.st[alias_name] = ValueInfo{alias_name, 1, origin_prop, nullptr};
+                blasted_region.sym_tbl[alias_name] = ValueInfo{alias_name, 1, origin_prop, nullptr};
                 return Z3VInfo{"!ALIAS", Z3VType::Other};
             }
         }
@@ -274,23 +279,23 @@ Z3VInfo BitBlastPass::traverseZ3Model(const z3::expr &e, int depth) {
                 Width width = 1;
 
                 // Determine assignment direction based on variable properties
-                bool lhs_in_st = blasted_region.st.find(lhs.name) != blasted_region.st.end();
-                bool rhs_in_st = blasted_region.st.find(rhs.name) != blasted_region.st.end();
-                auto lhs_prop = blasted_region.st[lhs.name].prop;
-                auto rhs_prop = blasted_region.st[rhs.name].prop;
+                bool lhs_in_st = blasted_region.sym_tbl.find(lhs.name) != blasted_region.sym_tbl.end();
+                bool rhs_in_st = blasted_region.sym_tbl.find(rhs.name) != blasted_region.sym_tbl.end();
+                auto lhs_prop = blasted_region.sym_tbl[lhs.name].prop;
+                auto rhs_prop = blasted_region.sym_tbl[rhs.name].prop;
 
                 if (lhs_prop == VProp::RND || lhs_prop == VProp::SECRET || lhs_prop == VProp::PUB) {
                     // If LHS is input type, RHS should be assigned LHS value
-                    blasted_region.instructions.emplace_back(
-                        Instruction{"=", ValueInfo{rhs.name, width, VProp::UNK, nullptr},
-                                    ValueInfo{lhs.name, width, VProp::UNK, nullptr}, ValueInfo{}});
+                    blasted_region.insts.emplace_back(Instruction{"=", ValueInfo{rhs.name, width, VProp::UNK, nullptr},
+                                                                  ValueInfo{lhs.name, width, VProp::UNK, nullptr},
+                                                                  ValueInfo{}});
                     return Z3VInfo(temp_name, Z3VType::Other);
 
                 } else if (rhs_prop == VProp::RND || rhs_prop == VProp::SECRET || rhs_prop == VProp::PUB) {
                     // If LHS not defined but RHS exists, assign RHS to LHS
-                    blasted_region.instructions.emplace_back(
-                        Instruction{"=", ValueInfo{lhs.name, width, VProp::UNK, nullptr},
-                                    ValueInfo{rhs.name, width, VProp::UNK, nullptr}, ValueInfo{}});
+                    blasted_region.insts.emplace_back(Instruction{"=", ValueInfo{lhs.name, width, VProp::UNK, nullptr},
+                                                                  ValueInfo{rhs.name, width, VProp::UNK, nullptr},
+                                                                  ValueInfo{}});
                     return Z3VInfo(temp_name, Z3VType::Other);
                 }
 
@@ -300,13 +305,13 @@ Z3VInfo BitBlastPass::traverseZ3Model(const z3::expr &e, int depth) {
 
                 // Check which side has not been defined
                 if (lhs_in_st) {
-                    blasted_region.instructions.emplace_back(
-                        Instruction{"=", ValueInfo{lhs.name, width, VProp::UNK, nullptr},
-                                    ValueInfo{rhs.name, width, VProp::UNK, nullptr}, ValueInfo{}});
+                    blasted_region.insts.emplace_back(Instruction{"=", ValueInfo{lhs.name, width, VProp::UNK, nullptr},
+                                                                  ValueInfo{rhs.name, width, VProp::UNK, nullptr},
+                                                                  ValueInfo{}});
                 } else {
-                    blasted_region.instructions.emplace_back(
-                        Instruction{"=", ValueInfo{rhs.name, width, VProp::UNK, nullptr},
-                                    ValueInfo{lhs.name, width, VProp::UNK, nullptr}, ValueInfo{}});
+                    blasted_region.insts.emplace_back(Instruction{"=", ValueInfo{rhs.name, width, VProp::UNK, nullptr},
+                                                                  ValueInfo{lhs.name, width, VProp::UNK, nullptr},
+                                                                  ValueInfo{}});
                 }
                 return Z3VInfo(temp_name, Z3VType::Other);
             }
@@ -322,11 +327,11 @@ Z3VInfo BitBlastPass::traverseZ3Model(const z3::expr &e, int depth) {
                     Width width = 1;
 
                     auto new_var = ValueInfo{temp_name, width, VProp::UNK, nullptr};
-                    blasted_region.st[temp_name] = new_var;
+                    blasted_region.sym_tbl[temp_name] = new_var;
                     llvm::errs() << "New inst. depth:" << depth << " op" << opname << "\n";
-                    blasted_region.instructions.emplace_back(
-                        Instruction{opname, new_var, ValueInfo{prev.name, width, VProp::UNK, nullptr},
-                                    ValueInfo{child.name, width, VProp::UNK, nullptr}});
+                    blasted_region.insts.emplace_back(Instruction{opname, new_var,
+                                                                  ValueInfo{prev.name, width, VProp::UNK, nullptr},
+                                                                  ValueInfo{child.name, width, VProp::UNK, nullptr}});
                     prev = Z3VInfo(temp_name, Z3VType::Other);
                     llvm::errs() << "prev: " << prev.name << "+=" << child.name << "\n";
                 }
@@ -349,23 +354,23 @@ Z3VInfo BitBlastPass::traverseZ3Model(const z3::expr &e, int depth) {
             auto ncond_expr_name = Z3VInfo::getNewName();       // i.e. !cond
             auto result_name = Z3VInfo::getNewName() + "_ite";  // i.e. !cond
             auto then_expr = ValueInfo{then_expr_name, width, VProp::UNK, nullptr};
-            blasted_region.st[then_expr_name] = then_expr;
+            blasted_region.sym_tbl[then_expr_name] = then_expr;
             auto else_expr = ValueInfo{else_expr_name, width, VProp::UNK, nullptr};
-            blasted_region.st[else_expr_name] = else_expr;
+            blasted_region.sym_tbl[else_expr_name] = else_expr;
             auto ncond_expr = ValueInfo{ncond_expr_name, width, VProp::UNK, nullptr};
-            blasted_region.st[ncond_expr_name] = ncond_expr;
+            blasted_region.sym_tbl[ncond_expr_name] = ncond_expr;
             auto result_expr = ValueInfo{result_name, width, VProp::UNK, nullptr};
-            blasted_region.st[result_name] = result_expr;
+            blasted_region.sym_tbl[result_name] = result_expr;
 
-            blasted_region.instructions.emplace_back(
+            blasted_region.insts.emplace_back(
                 Instruction{"!", ncond_expr, ValueInfo{cond_z3.name, width, VProp::UNK, nullptr}, ValueInfo{}});
-            blasted_region.instructions.emplace_back(Instruction{"&", then_expr,
-                                                                 ValueInfo{then_z3.name, width, VProp::UNK, nullptr},
-                                                                 ValueInfo{cond_z3.name, 1, VProp::UNK, nullptr}});
-            blasted_region.instructions.emplace_back(Instruction{"&", else_expr,
-                                                                 ValueInfo{else_z3.name, width, VProp::UNK, nullptr},
-                                                                 ValueInfo{ncond_expr.name, 1, VProp::UNK, nullptr}});
-            blasted_region.instructions.emplace_back(Instruction{"|", result_expr, then_expr, else_expr});
+            blasted_region.insts.emplace_back(Instruction{"&", then_expr,
+                                                          ValueInfo{then_z3.name, width, VProp::UNK, nullptr},
+                                                          ValueInfo{cond_z3.name, 1, VProp::UNK, nullptr}});
+            blasted_region.insts.emplace_back(Instruction{"&", else_expr,
+                                                          ValueInfo{else_z3.name, width, VProp::UNK, nullptr},
+                                                          ValueInfo{ncond_expr.name, 1, VProp::UNK, nullptr}});
+            blasted_region.insts.emplace_back(Instruction{"|", result_expr, then_expr, else_expr});
             return Z3VInfo(result_name, Z3VType::Other);
 
         } else {
@@ -418,18 +423,17 @@ Region BitBlastPass::get() {
             }
         }
     }
-    blasted_region.instructions.insert(blasted_region.instructions.begin(), temp_instructions.begin(),
-                                       temp_instructions.end());
+    blasted_region.insts.insert(blasted_region.insts.begin(), temp_instructions.begin(), temp_instructions.end());
 
     // Assemble output vars from bits at the end of the function body
     for (const auto &var_bit : var_bits) {
         if (var_bit.first.prop == VProp::OUTPUT) {
-            blasted_region.instructions.emplace_back(
+            blasted_region.insts.emplace_back(
                 Instruction{"=", var_bit.first, ValueInfo{"0", 1, VProp::CST, nullptr}, ValueInfo{}});
             for (unsigned i = 0; i < var_bit.second.size(); ++i) {
                 if (var_bit.second[i].has_value()) {
                     auto var_bit_name = var_bit.first.name + "#" + std::to_string(i);
-                    blasted_region.instructions.emplace_back(
+                    blasted_region.insts.emplace_back(
                         Instruction{"/z3|=/", var_bit.first,
                                     ValueInfo{"k!" + std::to_string(z3alias[var_bit_name]), 1, VProp::CST, nullptr},
                                     ValueInfo{std::to_string(i), 1, VProp::CST, nullptr}});

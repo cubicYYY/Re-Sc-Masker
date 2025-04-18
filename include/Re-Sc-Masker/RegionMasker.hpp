@@ -7,16 +7,16 @@
 
 #include "Re-Sc-Masker/Preludes.hpp"
 
-class TrivialRegionMasker;
-
 template <typename RegionMaskerType>
-class RegionCollector;
+class RegionCollector;  // FIXME: remove this after the special hack to handle operator "|" is resolved
 
-class RegionMasker {};
+class RegionMasker : private NonCopyable<RegionMasker> {};
 
 class TrivialRegionMasker : RegionMasker {
 public:
     TrivialRegionMasker(Region &originalRegion);
+    TrivialRegionMasker(TrivialRegionMasker &&other) noexcept;
+    TrivialRegionMasker &operator=(TrivialRegionMasker &&other) noexcept;
     void dump() const;
 
 private:

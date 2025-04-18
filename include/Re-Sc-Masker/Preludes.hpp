@@ -1,5 +1,7 @@
 #pragma once
 
+#include <clang/AST/Decl.h>
+
 #include <atomic>
 #include <cassert>
 #include <cstddef>
@@ -7,7 +9,6 @@
 #include <string>
 #include <string_view>
 #include <vector>
-#include <clang/AST/Decl.h>
 
 // Helper function to convert a string to a valid variable name
 inline std::string toValidVarName(std::string_view str) {
@@ -151,49 +152,92 @@ using SymbolTable = std::unordered_map<std::string, ValueInfo>;
 
 class Instruction {
 public:
-    Instruction() {}
-
     Instruction(std::string_view op, std::string_view content)
-        : op(op), assign_to(ValueInfo{content, 0, VProp::PUB, nullptr}), lhs(ValueInfo{}), rhs(ValueInfo{}) {} // TODO: check if a binary op lacks the right hand side operand
+        : op(op),
+          res(ValueInfo{content, 0, VProp::PUB, nullptr}),
+          lhs(ValueInfo{}),
+          rhs(ValueInfo{}) {}  // TODO: check if a binary op lacks the right hand side operand
 
-    Instruction(std::string_view op, ValueInfo assign_to, ValueInfo lhs, ValueInfo rhs)
-        : op(op), assign_to(assign_to), lhs(lhs), rhs(rhs) {}
+    Instruction() = default;
+    Instruction(const Instruction &inst) noexcept : op(inst.op), res(inst.res), lhs(inst.lhs), rhs(inst.rhs) {}
+    Instruction(Instruction &&inst) noexcept
+        : op(std::move(inst.op)), res(std::move(inst.res)), lhs(std::move(inst.lhs)), rhs(std::move(inst.rhs)) {}
+    Instruction &operator=(const Instruction &inst) noexcept {
+        if (this != &inst) {
+            op = inst.op;
+            res = inst.res;
+            lhs = inst.lhs;
+            rhs = inst.rhs;
+        }
+        return *this;
+    }
+    Instruction &operator=(Instruction &&inst) noexcept {
+        if (this != &inst) {
+            op = std::move(inst.op);
+            res = std::move(inst.res);
+            lhs = std::move(inst.lhs);
+            rhs = std::move(inst.rhs);
+        }
+        return *this;
+    }
+
+    ~Instruction() noexcept = default;
+
+    Instruction(std::string_view op, ValueInfo res, ValueInfo lhs, ValueInfo rhs)
+        : op(op), res(res), lhs(lhs), rhs(rhs) {}
 
     void dump() const { llvm::errs() << toString() << "\n"; }
     inline std::string toString() const {
         if (op == "/z3|=/") {
-            return assign_to.name + " |= " + lhs.name + " << " + rhs.name + ";";
+            return res.name + " |= " + lhs.name + " << " + rhs.name + ";";
         }
         if (op == "/z3=/") {
-            return assign_to.name + " = " + lhs.name + " & (1 << " + rhs.name + ")" + "; // alias";
+            return res.name + " = " + lhs.name + " & (1 << " + rhs.name + ")" + "; // alias";
         }
         if (op == "=") {
-            return assign_to.name + " = " + lhs.name + ";";
+            return res.name + " = " + lhs.name + ";";
         }
         if (op == "//") {
-            return op + assign_to.name;
+            return op + res.name;
         }
         if (isUnaryOp()) {
             // Unary op
-            return assign_to.name + " = " + op + lhs.name + ";";
+            return res.name + " = " + op + lhs.name + ";";
         }
-        return assign_to.name + " = " + lhs.name + op + rhs.name + ";";
+        return res.name + " = " + lhs.name + op + rhs.name + ";";
     }
 
-    inline bool isUnaryOp() const {
-        return rhs.isNone();
-    }
+    inline bool isUnaryOp() const { return rhs.isNone(); }
 
 public:
     std::string op;
-    ValueInfo assign_to, lhs, rhs;
+    ValueInfo res, lhs, rhs;
 };
+
 class Region {
 public:
-    Region() {}
-    Region(const SymbolTable &st): st(st) {}
+    Region() = default;
+    Region(const Region &o) : sym_tbl(o.sym_tbl) {}
+    Region(Region &&o) : sym_tbl(std::move(o.sym_tbl)) {}
+    Region &operator=(const Region &o) {
+        if (this != &o) {
+            insts = o.insts;
+            sym_tbl = o.sym_tbl;
+        }
+        return *this;
+    }
+    Region &operator=(Region &&o) {
+        if (this != &o) {
+            insts = std::move(o.insts);
+            sym_tbl = std::move(o.sym_tbl);
+        }
+        return *this;
+    }
 
-    size_t count() const { return instructions.size(); }
+    Region(const SymbolTable &st) : sym_tbl(st) {}
+    Region(SymbolTable &&st) : sym_tbl(std::move(st)) {}
+
+    size_t count() const { return insts.size(); }
     static const Region end() { return Region(); }
     bool isEnd() { return (count() == 0); }
 
@@ -204,20 +248,20 @@ public:
         llvm::errs() << "Instructions:\n";
         // for (const auto &inst : instructions) {
         //   llvm::errs() << "  Op: " << inst.op << "\n";
-        //   llvm::errs() << "    AssignTo: " << valueInfoToString(inst.assign_to)
+        //   llvm::errs() << "    AssignTo: " << valueInfoToString(inst.res)
         //                << "\n";
         //   llvm::errs() << "    LHS: " << valueInfoToString(inst.lhs) << "\n";
         //   llvm::errs() << "    RHS: " << valueInfoToString(inst.rhs) << "\n";
         // }
 
         // Simplified
-        for (const auto &inst : instructions) {
+        for (const auto &inst : insts) {
             inst.dump();
         }
 
         // Dump symbol table
         llvm::errs() << "Symbol Table:\n";
-        for (const auto &entry : st) {
+        for (const auto &entry : sym_tbl) {
             const auto &name = entry.first;
             const auto &valueInfo = entry.second;
             llvm::errs() << "  " << name << ": " << valueInfoToString(valueInfo) << "\n";
@@ -237,6 +281,8 @@ public:
         llvm::errs() << "Total Instructions: " << count() << "\n";
     }
 
+    inline static Region getNullRegion() { return Region(); }
+
 private:
     std::string valueInfoToString(const ValueInfo &val) const {
         std::ostringstream oss;
@@ -249,12 +295,9 @@ private:
     }
 
 public:
-    std::vector<Instruction> instructions;
-    // TODO: make it private
-    SymbolTable st;
+    std::vector<Instruction> insts;
+    SymbolTable sym_tbl;
 };
-
-static Region getNullRegion() { return Region(); }
 
 class Pass {
 public:
@@ -285,12 +328,36 @@ inline size_t getWidthFromType(std::string_view type) {
     return width;
 }
 
-// FIXME: we should flatten the chain by default (similar to find-union-set)
-template <typename Key>
-inline Key find_root(const std::unordered_map<Key, Key> &index, const Key &key) {
-    Key result = key;
-    while (index.count(result) && index.at(result) != result) {
-        result = index.at(result);
+const auto &find_root(auto &index, const auto &key) {
+    auto current = key;
+    while (true) {
+        auto it = index.find(current);
+        if (it == index.end() || it->second == current) break;
+        current = it->second;
     }
-    return result;
+
+    const auto &root = current;
+    current = key;
+    while (true) {
+        auto it = index.find(current);
+        if (it == index.end() || it->second == root) break;
+        auto parent = it->second;
+        it->second = root;
+        current = parent;
+    }
+
+    return root;
 }
+
+// Mixin classes
+
+template <class T>
+class NonCopyable {
+public:
+    NonCopyable(const NonCopyable &) = delete;
+    T &operator=(const T &) = delete;
+
+protected:
+    NonCopyable() = default;
+    ~NonCopyable() = default;  /// Protected non-virtual destructor
+};

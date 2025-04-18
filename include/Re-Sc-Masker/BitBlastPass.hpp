@@ -14,11 +14,11 @@
 class Z3VInfo;
 
 /// Utilizes Z3 Solver to eliminate integer operations
-class BitBlastPass : public Pass {
+class BitBlastPass : public Pass, private NonCopyable<BitBlastPass> {
 public:
     using TopoId = std::uint32_t;
     /// Encode relationship between separated bits in Z3
-    BitBlastPass(const ValueInfo &ret, Region &&origin_region);
+    explicit BitBlastPass(const ValueInfo &ret, Region &&origin_region);
 
     /// Return the bit-blasted region
     Region get() override;
@@ -58,9 +58,24 @@ enum class Z3VType { Other, Input, Output };
 class Z3VInfo {
 public:
     Z3VInfo() : name(""), type(Z3VType::Other), topo_id(0) {}
-    Z3VInfo(const Z3VInfo &o) : name(o.name), type(o.type), topo_id(0) {}
+
     Z3VInfo(std::string_view name, Z3VType type, std::uint32_t topo_id = 0)
         : name(name), type(type), topo_id(topo_id) {}
+
+    Z3VInfo(const Z3VInfo &o) : name(o.name), type(o.type), topo_id(0) {}
+
+    Z3VInfo(Z3VInfo &&o) noexcept : name(std::move(o.name)), type(o.type), topo_id(0) {}
+
+    Z3VInfo &operator=(Z3VInfo &&o) noexcept {
+        if (this != &o) {
+            name = std::move(o.name);
+            type = o.type;
+            topo_id = 0;
+        }
+        return *this;
+    }
+
+    ~Z3VInfo() = default;
 
     static std::string getNewName() {
         static int id = 0;
