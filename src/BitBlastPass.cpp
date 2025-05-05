@@ -16,7 +16,7 @@ std::uint32_t Z3VInfo::max_topo_id = 0;
 // variable before passing it to the next region. This will cause
 // redundant assembling.
 // (but it is a good start)
-BitBlastPass::BitBlastPass(const ValueInfo &ret, Region &&origin_region) {
+Z3BitBlastPass::Z3BitBlastPass(const ValueInfo &ret, Region &&origin_region) {
     auto &st = origin_region.sym_tbl;
     blasted_region.sym_tbl = st;
 
@@ -82,7 +82,7 @@ BitBlastPass::BitBlastPass(const ValueInfo &ret, Region &&origin_region) {
     optimize_tactic = simplify & bit_blast & simplify_again;
 
     // Bit-blast each instructions
-    for (auto &&inst : std::exchange(origin_region.insts, {})) {
+    for (auto &&inst : origin_region.insts) {
         blast(std::move(inst));
     }
 }
@@ -93,7 +93,7 @@ BitBlastPass::BitBlastPass(const ValueInfo &ret, Region &&origin_region) {
 /// For each `X = Y`, tid_X = tid_Y + 1
 /// This is essentially a simplified way to encode data dependencies,
 /// and it works because of the linearity of crypto programs
-void BitBlastPass::calc_topo(const Region &r) {
+void Z3BitBlastPass::calc_topo(const Region &r) {
     for (const auto &inst : r.insts) {
         if (inst.isUnaryOp()) {
             var_topo[inst.res] = var_topo[inst.lhs] + 1;
@@ -107,7 +107,7 @@ void BitBlastPass::calc_topo(const Region &r) {
 }
 
 /// Return a bit-blasted version of the instruction
-void BitBlastPass::blast(Instruction &&inst) {
+void Z3BitBlastPass::blast(Instruction &&inst) {
     // TODO: Add the constraints from instructions
     inst.dump();
 
@@ -160,7 +160,7 @@ void BitBlastPass::blast(Instruction &&inst) {
     solve_and_extract(goal);
 }
 
-Z3VInfo BitBlastPass::traverseZ3Model(const z3::expr &e, int depth) {
+Z3VInfo Z3BitBlastPass::traverseZ3Model(const z3::expr &e, int depth) {
     for (auto i = 0; i < depth * 4; i++) {
         llvm::errs() << (i % 4 ? "-" : "|");
     }
@@ -383,7 +383,7 @@ Z3VInfo BitBlastPass::traverseZ3Model(const z3::expr &e, int depth) {
     }
     return Z3VInfo{};
 }
-void BitBlastPass::solve_and_extract(const z3::goal &goal) {
+void Z3BitBlastPass::solve_and_extract(const z3::goal &goal) {
     if (!optimize_tactic) {
         llvm::errs() << "Error: No tactic set\n";
         exit(1);
@@ -407,7 +407,7 @@ void BitBlastPass::solve_and_extract(const z3::goal &goal) {
     llvm::errs() << "------------------\n";
 }
 
-Region BitBlastPass::get() {
+Region Z3BitBlastPass::get() {
     // Extract input variable bits at the beginning of the function body
     std::vector<Instruction> temp_instructions;
     llvm::errs() << "inserting input bits:\n";

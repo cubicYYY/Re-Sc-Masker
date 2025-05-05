@@ -269,46 +269,26 @@ public:
         // Parse the original program
         visitor.TraverseDecl(TUDecl);
 
-        llvm::errs() << "---DUMP---\n";
+        llvm::errs() << "---Global Region DUMP---\n";
         globalRegion.dump();
-
-        // Bit-blasting
 
 #ifdef SCM_Z3_BLASTING_ENABLED
-        llvm::errs() << "---Before Bit-Blasting---\n";
-        globalRegion.dump();
-
+        // Bit-blasting
         llvm::errs() << "---Bit-Blast(Per Instr.)---\n";
-        auto blasted = BitBlastPass(ret_var, std::move(globalRegion));
+        auto blasted = Z3BitBlastPass(ret_var, std::move(globalRegion));
         globalRegion = blasted.get();
         globalRegion.dump();
 #endif
 
         // REPLACE phase: Replace each region with a masked region
         llvm::errs() << "---REPLACE---\n";
-
+        auto global_st = globalRegion.sym_tbl;
         // Divide sub regions
-        using MaskedRegionT = TrivialRegionMasker;
-        TrivialRegionDivider divider(globalRegion);
-        RegionCollector<MaskedRegionT> combinator;
+        auto divided = TrivialRegionDivider(std::move(globalRegion));
+        auto masked = TrivialRegionMasker(std::move(divided));
+        auto combined = RegionCollector(std::move(masked));
+        auto final = RegionConcatenater(std::move(combined));
 
-        auto region_id = 0;
-        while (!divider.done()) {
-            Region subRegion = divider.next();
-            MaskedRegionT masked(subRegion);
-            llvm::errs() << "Masked: " + std::to_string(region_id++) + "\n";
-            masked.dump();
-            combinator.add(std::move(masked));
-        }
-        llvm::errs() << "\n===DefUse Combined===\n";
-        combinator.dump();
-
-        llvm::errs() << "---COMPOSITE---\n";
-        // pass the original arguments to make the order unchanged
-        auto final = RegionConcatenater{std::move(combinator)};
-        // Insert global_region symbol table into final region
-        // (so that we will not miss explicitly declared temps in the original program)
-        final.curRegion.sym_tbl.insert(globalRegion.sym_tbl.begin(), globalRegion.sym_tbl.end());
         final.printAsCode("masked_func", ret_var, original_fparams);
     }
 };
@@ -325,18 +305,6 @@ public:
     ScMaskerFrontendActionFactory() {}
     std::unique_ptr<clang::FrontendAction> create() override { return std::make_unique<ScMaskerFrontendAction>(); }
 };
-
-void divideAndPrintRegion(const Region &region) {
-    TrivialRegionDivider divider(region);
-
-    llvm::errs() << "Dividing and printing regions:\n";
-    while (!divider.done()) {
-        Region subRegion = divider.next();
-        if (!subRegion.isEnd()) {
-            subRegion.dump();  // Dump the sub-region
-        }
-    }
-}
 
 void init() {}
 

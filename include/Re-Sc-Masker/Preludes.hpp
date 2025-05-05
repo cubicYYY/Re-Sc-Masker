@@ -1,5 +1,5 @@
 #pragma once
-
+// FIXME: our own namespace!!!
 #include <clang/AST/Decl.h>
 
 #include <atomic>
@@ -217,8 +217,8 @@ public:
 class Region {
 public:
     Region() = default;
-    Region(const Region &o) : sym_tbl(o.sym_tbl) {}
-    Region(Region &&o) : sym_tbl(std::move(o.sym_tbl)) {}
+    Region(const Region &o) : insts(o.insts), sym_tbl(o.sym_tbl) {}
+    Region(Region &&o) noexcept : insts(std::move(o.insts)), sym_tbl(std::move(o.sym_tbl)) {}
     Region &operator=(const Region &o) {
         if (this != &o) {
             insts = o.insts;
@@ -226,7 +226,7 @@ public:
         }
         return *this;
     }
-    Region &operator=(Region &&o) {
+    Region &operator=(Region &&o) noexcept {
         if (this != &o) {
             insts = std::move(o.insts);
             sym_tbl = std::move(o.sym_tbl);
@@ -236,6 +236,8 @@ public:
 
     Region(const SymbolTable &st) : sym_tbl(st) {}
     Region(SymbolTable &&st) : sym_tbl(std::move(st)) {}
+    Region(const std::vector<Instruction> &insts) : insts(insts) {}
+    Region(std::vector<Instruction> &&insts) : insts(std::move(insts)) {}
 
     size_t count() const { return insts.size(); }
     static const Region end() { return Region(); }
@@ -246,15 +248,6 @@ public:
 
         // Dump instructions
         llvm::errs() << "Instructions:\n";
-        // for (const auto &inst : instructions) {
-        //   llvm::errs() << "  Op: " << inst.op << "\n";
-        //   llvm::errs() << "    AssignTo: " << valueInfoToString(inst.res)
-        //                << "\n";
-        //   llvm::errs() << "    LHS: " << valueInfoToString(inst.lhs) << "\n";
-        //   llvm::errs() << "    RHS: " << valueInfoToString(inst.rhs) << "\n";
-        // }
-
-        // Simplified
         for (const auto &inst : insts) {
             inst.dump();
         }
@@ -267,18 +260,7 @@ public:
             llvm::errs() << "  " << name << ": " << valueInfoToString(valueInfo) << "\n";
         }
 
-        // Dump the output mapping
-        // llvm::errs() << "Output Mapping:\n";
-        // for (const auto &pair : outputs2xored) {
-        //   llvm::errs() << "OVar: " << pair.first;
-        //   const auto &xor_set = pair.second;
-        //   for (auto xor_var : xor_set) {
-        //     llvm::errs() << xor_var.name << ",";
-        //   }
-        //   llvm::errs() << "\n";
-        // }
-
-        llvm::errs() << "Total Instructions: " << count() << "\n";
+        llvm::errs() << "#insts= " << count() << "\n";
     }
 
     inline static Region getNullRegion() { return Region(); }
@@ -297,11 +279,6 @@ private:
 public:
     std::vector<Instruction> insts;
     SymbolTable sym_tbl;
-};
-
-class Pass {
-public:
-    virtual Region get() = 0;
 };
 
 inline size_t getWidthFromType(std::string_view type) {
@@ -328,36 +305,29 @@ inline size_t getWidthFromType(std::string_view type) {
     return width;
 }
 
-const auto &find_root(auto &index, const auto &key) {
-    auto current = key;
-    while (true) {
-        auto it = index.find(current);
-        if (it == index.end() || it->second == current) break;
-        current = it->second;
-    }
-
-    const auto &root = current;
-    current = key;
-    while (true) {
-        auto it = index.find(current);
-        if (it == index.end() || it->second == root) break;
-        auto parent = it->second;
-        it->second = root;
-        current = parent;
-    }
-
-    return root;
-}
-
 // Mixin classes
 
+/// Mixin CRTP class to disallow copying
 template <class T>
 class NonCopyable {
-public:
+private:
     NonCopyable(const NonCopyable &) = delete;
     T &operator=(const T &) = delete;
 
 protected:
     NonCopyable() = default;
-    ~NonCopyable() = default;  /// Protected non-virtual destructor
+    ~NonCopyable() = default;
 };
+
+/// return: iterator of the root (end == not exists)
+auto find_n_update(auto &edges, const auto &key) {
+    auto current_it = edges.find(key);
+    // FIXME: remove equivalence check once no more self circle appears in the edges
+    if (current_it == edges.end() || current_it->second == key) {
+        // root found
+        return current_it;
+    }
+    auto root = find_n_update(edges, current_it->second);
+    current_it->second = root->second;
+    return current_it;
+}

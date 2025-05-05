@@ -4,3 +4,7 @@
 - Allow multiple assignments to a var (update-able symbol table)
 - Allow removing var out-of-scope from the symbol table
 - Unified interfaces of passes
+- Make all passes as functors
+- `ScMasker` namespace
+- Remove self-pointing edges in the alias map
+- Remove unessential std::move in move ctors

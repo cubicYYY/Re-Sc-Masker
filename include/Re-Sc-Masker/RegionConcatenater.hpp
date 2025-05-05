@@ -10,77 +10,73 @@
 #include "Re-Sc-Masker/Config.hpp"
 #include "Re-Sc-Masker/Preludes.hpp"
 
-template <typename DefUseRegionType>
-class RegionConcatenater : private NonCopyable<RegionConcatenater<DefUseRegionType>> {
+template <typename RegionCollectorT>
+class RegionConcatenater : NonCopyable<RegionConcatenater<RegionCollectorT>> {
 public:
     RegionConcatenater() = default;
-    RegionConcatenater(DefUseRegionType &&r) {
+    RegionConcatenater(RegionCollectorT &&r) {
         llvm::errs() << "---Composition---\n";
         std::map<std::string, ValueInfo> unmasks;
 
         // Pre-scan
         llvm::errs() << "--Pre-scanning--\n";
         r.dump();
-        llvm::errs() << "outputs2xors:\n";
-        for (const auto &xor_set : r.output2xors) {
-            llvm::errs() << xor_set.first << ": ";
-            for (const auto &xored : xor_set.second) {
-                llvm::errs() << xored << " ";
-            }
-            llvm::errs() << "\n";
-        }
-        llvm::errs() << "----------\n";
+        llvm::errs() << "#regions: " << r.regions.size() << "\n";
 
         // unordered_map: string -> unordered_set<string>
-        typename DefUseRegionType::XorMap xor_diff;
+        typename RegionCollectorT::XorMap xor_diff;
 
         /// Temp symbol table: var to latest def statement.
         /// varname -> (#instruction in the output region)
         std::unordered_map<std::string, size_t> var2def;
 
         for (auto &&masked_region : r.regions) {
-            for (auto &&inst : masked_region.region.insts) {
+            llvm::errs() << "#insts: " << masked_region.insts.size() << "\n";
+            for (auto &&inst : masked_region.insts) {
                 inst.dump();
-                if (inst.op != "^") {
-                    curRegion.insts.emplace_back(std::move(inst));
-                    continue;
-                }
                 if (inst.op == "=") {
-                    const auto &lhs_ref2 = find_root(r.alias_edge, inst.lhs.name);
-                    r.alias_edge[inst.res.name] = lhs_ref2;
+                    llvm::errs() << "//=\n";
+                    auto real_lhs_i = find_n_update(r.alias_edge, inst.lhs.name);
+                    if (real_lhs_i != r.alias_edge.end()) {
+                        r.alias_edge[inst.res.name] = real_lhs_i->second;
+                    }
                     curRegion.insts.emplace_back(std::move(inst));
                     continue;
                 }
-
-#ifdef SCM_GAP_FILLING_ENABLED
-                // IMPORTANT NOTE: We may have def+use like `t1=t2^r1`
 
                 auto res = inst.res.name;  // do not find the root of ref chain, since a
                                            // new def will override this chain
-                auto rhs_ref2 = find_root(r.alias_edge, inst.rhs.name);
-                auto lhs_ref2 = find_root(r.alias_edge, inst.lhs.name);
-                bool is_def = r.output2xors.count(res);
-                bool is_r_use = r.output2xors.count(rhs_ref2) &&
-                                r.output2xors[rhs_ref2].count(lhs_ref2);  // lhs is a var used in rhs's XOR
-                                                                          // set, so it is a use of rhs
-                bool is_l_use = r.output2xors.count(lhs_ref2) &&
-                                r.output2xors[lhs_ref2].count(rhs_ref2);  // rhs is a var used in lhs's XOR
-                                                                          // set, so it is  ause of lhs
+                auto real_lhs_i = find_n_update(r.alias_edge, inst.lhs.name);
+                auto real_rhs_i = find_n_update(r.alias_edge, inst.rhs.name);
 
-                if (!is_def && !is_l_use && !is_r_use) {
+                std::string real_lhs, real_rhs;
+                if (real_lhs_i == r.alias_edge.end()) {
+                    real_lhs = inst.lhs.name;
+                } else {
+                    real_lhs = real_lhs_i->second;
+                }
+                if (real_rhs_i == r.alias_edge.end()) {
+                    real_rhs = inst.rhs.name;
+                } else {
+                    real_rhs = real_rhs_i->second;
+                }
+
+                bool is_def = r.output2xors.count(res);
+                bool is_lhs_used = r.output2xors.count(real_lhs);
+                bool is_rhs_used = r.output2xors.count(real_rhs);
+
+                assert((int)is_def + (int)is_rhs_used + (int)is_lhs_used <= 1 && "Ambiguous use/def");
+                // FIXME: We may have def+use like `t1=t2^r1`
+
+                // Not def or use: change nothing
+                if (!is_def && !is_lhs_used && !is_rhs_used) {
                     curRegion.insts.emplace_back(std::move(inst));
                     continue;
                 }
 
-                // 1. Def+Use
-                // TODO: unimplemented
-                if (is_def && is_l_use && is_r_use) {
-                    assert(false && "ubnimplemented");
-                    continue;
-                }
-
-                // 2. Def
+                // Def:
                 if (is_def) {
+                    llvm::errs() << "// def found: " << res << "\n";
                     curRegion.insts.emplace_back("//", "def:");
 
                     var2def[res] = curRegion.insts.size();
@@ -89,27 +85,21 @@ public:
                     continue;
                 }
 
-                // 3. Use
-                if (is_l_use) {                       // lhs is the output var: replace
-                                                      // the rhs (random var)
-                    if (!xor_diff.count(lhs_ref2)) {  // first use: swapping
-                        Instruction &def_inst_ref = curRegion.insts[var2def[lhs_ref2]];
-                        xor_diff[lhs_ref2] = {rhs_ref2, def_inst_ref.rhs.name};
+                // Use:
+                if (is_lhs_used) {  // lhs is the output var: replace the rhs (random var)
+                    llvm::errs() << "// lhs use found: " << real_lhs << "\n";
+                    if (!xor_diff.count(real_lhs)) {  // first use: swapping
+                        const Instruction &def_inst_ref = curRegion.insts[var2def[real_lhs]];
+                        xor_diff[real_lhs] = {real_rhs, def_inst_ref.rhs.name};
                         curRegion.insts.emplace_back("^", inst.res, inst.lhs, def_inst_ref.rhs);
-                        def_inst_ref.rhs = inst.rhs;
+                        curRegion.insts[var2def[real_lhs]].rhs = inst.rhs;  // replace the RAND var used in def
                         continue;
                     }
-                    // otherwise, we need to take the swapped RND var into account.
-                    // For example, if we met the first use of X , like `n=X^r2`, then we need
-                    // to replace the def `X=n^r1` with `n=X^r2`, and this use statement becomes `n=X^r1`
-                    // (swapping). Then, xor_diff[X]={r1,r2}.
-                    // However, after the first use, each time when we
-                    // met another use "n=X^rx", we need to transform it into "n=X^rx^(xor_diff[X])"
-                    // E.g.
-                    // Original program:
-                    // X=n^r1
-                    // n1=X^r2
-                    // n2=X^r3
+                    // If the swapping process have been perform on a var, we need to take the swapped RND var into
+                    // account. For example, if we met the first use of X , like `n=X^r2`, then we need to replace the
+                    // def `X=n^r1` with `n=X^r2`, and this use statement becomes `n=X^r1` (swapping). Then,
+                    // xor_diff[X]={r1,r2}. However, after the first use, each time when we met another use "n=X^rx", we
+                    // need to transform it into "n=X^rx^(xor_diff[X])" E.g. Original program: X=n^r1 n1=X^r2 n2=X^r3
                     //
                     // New program:
                     // X=n^r2 // swapped
@@ -119,9 +109,9 @@ public:
 
                     // Remember: only changes on def statement (of `X`) will have side-effects, so in this case the size
                     // of xor_diff[X]==2
-                    const auto &diff = xor_diff[lhs_ref2];
+                    const auto &diff = xor_diff[real_lhs];
                     assert(diff.size() == 2);
-                    curRegion.insts.emplace_back("//", "{replaced(" + lhs_ref2 + "):");
+                    curRegion.insts.emplace_back("//", "{replaced(" + real_lhs + "):");
                     curRegion.insts.emplace_back(inst);
                     for (const auto &d : diff) {
                         curRegion.insts.emplace_back("^", inst.res, inst.res,
@@ -132,20 +122,20 @@ public:
                     continue;
                 }
 
-                if (is_r_use) {                       // rhs is the output var: replace
-                                                      // the lhs (random var)
-                    if (!xor_diff.count(rhs_ref2)) {  // first use: just swap the RND var
-                        Instruction &def_inst_ref = curRegion.insts[var2def[rhs_ref2]];
-                        xor_diff[rhs_ref2] = {lhs_ref2, def_inst_ref.rhs.name};
+                if (is_rhs_used) {  // rhs is the output var: replace the lhs (random var)
+                    llvm::errs() << "// rhs use found: " << real_rhs << "\n";
+                    if (!xor_diff.count(real_rhs)) {  // first use: just swap the RND var
+                        const Instruction &def_inst_ref = curRegion.insts[var2def[real_rhs]];
+                        xor_diff[real_rhs] = {real_lhs, def_inst_ref.rhs.name};
                         curRegion.insts.emplace_back("^", inst.res, def_inst_ref.lhs, inst.rhs);
-                        def_inst_ref.lhs = inst.lhs;
+                        curRegion.insts[var2def[real_rhs]].lhs = inst.lhs;
                         continue;
                     }
 
-                    const auto &diff = xor_diff[rhs_ref2];
+                    const auto &diff = xor_diff[real_rhs];
                     assert(diff.size() == 2);
 
-                    curRegion.insts.emplace_back("//", "{replaced(" + rhs_ref2 + "):");
+                    curRegion.insts.emplace_back("//", "{replaced(" + real_rhs + "):");
                     curRegion.insts.emplace_back(inst);  // do not move it: still in use
                     for (const auto &d : diff) {
                         curRegion.insts.emplace_back("^", inst.res, inst.res, ValueInfo{d, 1, VProp::RND, nullptr});
@@ -154,14 +144,23 @@ public:
 
                     continue;
                 }
-#endif
 
                 // Default:　do not change the instruction
                 curRegion.insts.emplace_back(std::move(inst));
             }
-            curRegion.sym_tbl.insert(masked_region.region.sym_tbl.begin(), masked_region.region.sym_tbl.end());
+            curRegion.sym_tbl.insert(std::make_move_iterator(masked_region.sym_tbl.begin()),
+                                     std::make_move_iterator(masked_region.sym_tbl.end()));
         }
+
+        llvm::errs() << "GLOBAL SYM TBL:\n";
+        for (const auto &gsym : r.global_sym_tbl) {
+            llvm::errs() << gsym.first << ";\n";
+        }
+
+        curRegion.sym_tbl.insert(std::make_move_iterator(r.global_sym_tbl.begin()),
+                                 std::make_move_iterator(r.global_sym_tbl.end()));
     }
+
     void printAsCode(std::string_view func_name, ValueInfo return_var,
                      std::vector<std::string> original_fparams) const {
         std::vector<ValueInfo> tempVars;
@@ -203,10 +202,12 @@ public:
 
         // Function body
         llvm::outs() << "{\n";
+
         // local variable decl
         for (const auto &tempVar : tempVars) {
             llvm::outs() << "bool " << tempVar.name << ";\n";
         }
+
         // insts
         for (const auto &instruction : curRegion.insts) {
             llvm::outs() << instruction.toString() << "\n";

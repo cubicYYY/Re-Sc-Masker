@@ -13,12 +13,16 @@
 
 class Z3VInfo;
 
+struct BitBlastPass {
+    virtual Region get() = 0;
+};
+
 /// Utilizes Z3 Solver to eliminate integer operations
-class BitBlastPass : public Pass, private NonCopyable<BitBlastPass> {
+class Z3BitBlastPass : public BitBlastPass, private NonCopyable<Z3BitBlastPass> {
 public:
     using TopoId = std::uint32_t;
     /// Encode relationship between separated bits in Z3
-    explicit BitBlastPass(const ValueInfo &ret, Region &&origin_region);
+    explicit Z3BitBlastPass(const ValueInfo &ret, Region &&origin_region);
 
     /// Return the bit-blasted region
     Region get() override;
@@ -82,13 +86,13 @@ public:
         return "z3_" + std::to_string(id++);
     }
 
-    static BitBlastPass::TopoId getNewTopoId() { return ++max_topo_id; }
+    static Z3BitBlastPass::TopoId getNewTopoId() { return ++max_topo_id; }
 
-    static void updateMaxTopoId(BitBlastPass::TopoId new_topo) { max_topo_id = std::max(max_topo_id, new_topo); }
+    static void updateMaxTopoId(Z3BitBlastPass::TopoId new_topo) { max_topo_id = std::max(max_topo_id, new_topo); }
 
 public:
-    static BitBlastPass::TopoId max_topo_id;
+    static Z3BitBlastPass::TopoId max_topo_id;
     std::string name;
     Z3VType type;
-    BitBlastPass::TopoId topo_id;
+    Z3BitBlastPass::TopoId topo_id;
 };

@@ -17,6 +17,8 @@ cmake --build build
 
 # Verify it:
 build/Re-Sc-Masker input/minimum.cpp > output/minimum.cpp
+# Or:
+# cmake --build build --config Debug
 ```
 
 ## Limitations
