@@ -32,6 +32,7 @@ public:
 
         for (auto &&masked_region : r.regions) {
             llvm::errs() << "#insts: " << masked_region.insts.size() << "\n";
+            curRegion.insts.emplace_back("//", "---------");
             for (auto &&inst : masked_region.insts) {
                 inst.dump();
                 if (inst.op == "=") {
@@ -77,8 +78,6 @@ public:
                 // Def:
                 if (is_def) {
                     llvm::errs() << "// def found: " << res << "\n";
-                    curRegion.insts.emplace_back("//", "def:");
-
                     var2def[res] = curRegion.insts.size();
 
                     curRegion.insts.emplace_back(std::move(inst));

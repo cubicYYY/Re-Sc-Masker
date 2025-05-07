@@ -188,11 +188,11 @@ public:
 
     void dump() const { llvm::errs() << toString() << "\n"; }
     inline std::string toString() const {
-        if (op == "/z3|=/") {
-            return res.name + " |= " + lhs.name + " << " + rhs.name + ";";
+        if (op == "/z3=>var/") {
+            return res.name + " |= " + lhs.name + " << " + rhs.name + "; // =>";
         }
-        if (op == "/z3=/") {
-            return res.name + " = " + lhs.name + " & (1 << " + rhs.name + ")" + "; // alias";
+        if (op == "/var=>z3/") {
+            return res.name + " = " + lhs.name + " & (1 << " + rhs.name + ")" + "; // <=";
         }
         if (op == "=") {
             return res.name + " = " + lhs.name + ";";

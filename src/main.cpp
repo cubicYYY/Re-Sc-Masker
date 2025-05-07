@@ -272,13 +272,11 @@ public:
         llvm::errs() << "---Global Region DUMP---\n";
         globalRegion.dump();
 
-#ifdef SCM_Z3_BLASTING_ENABLED
         // Bit-blasting
         llvm::errs() << "---Bit-Blast(Per Instr.)---\n";
         auto blasted = Z3BitBlastPass(ret_var, std::move(globalRegion));
         globalRegion = blasted.get();
         globalRegion.dump();
-#endif
 
         // REPLACE phase: Replace each region with a masked region
         llvm::errs() << "---REPLACE---\n";
