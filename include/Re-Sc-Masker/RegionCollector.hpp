@@ -19,11 +19,11 @@ public:
         for (auto &&rio : masked_region.regions_io) {
             // Check all outputs
             // FIXME: we shall not throw all vars into outputs set... only those who will be used afterwards
-            llvm::errs() << "\n=====Checking outputs:\n";
+            llvm::errs() << "=====Checking outputs:\n";
             for (const auto &out : rio.outs) {
-                llvm::errs() << out.name << "\n";
+                llvm::errs() << out.name << ";\n";
             }
-            llvm::errs() << "=====\n\n";
+            llvm::errs() << "=====\n";
 
             // Scan and collect XorS for each var
             XorMap xored_vars;

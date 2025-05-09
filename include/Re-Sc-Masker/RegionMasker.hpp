@@ -43,8 +43,8 @@ public:
             }
         }
         llvm::errs() << "\nglobal sym tbl:\n";
-        for (const auto &[varname, _] : global_sym_tbl) {
-            llvm::errs() << varname << "\n";
+        for (const auto &[varname, vinfo] : global_sym_tbl) {
+            llvm::errs() << varname << " " << vinfo.toString() << "\n";
         }
         llvm::errs() << "\n----\n";
     }
@@ -121,10 +121,10 @@ private:
             RegionCollector real_collected(std::move(real_masked));
             RegionConcatenater real_concatenated(std::move(real_collected));
 
-            r.sym_tbl.insert(std::make_move_iterator(real_concatenated.curRegion.sym_tbl.begin()),
-                             std::make_move_iterator(real_concatenated.curRegion.sym_tbl.end()));
-            r.insts.insert(r.insts.end(), std::make_move_iterator(real_concatenated.curRegion.insts.begin()),
-                           std::make_move_iterator(real_concatenated.curRegion.insts.end()));
+            r.sym_tbl.insert(std::make_move_iterator(real_concatenated.region.sym_tbl.begin()),
+                             std::make_move_iterator(real_concatenated.region.sym_tbl.end()));
+            r.insts.insert(r.insts.end(), std::make_move_iterator(real_concatenated.region.insts.begin()),
+                           std::make_move_iterator(real_concatenated.region.insts.end()));
             return;
         }
 

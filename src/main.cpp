@@ -281,7 +281,8 @@ public:
         // REPLACE phase: Replace each region with a masked region
         llvm::errs() << "---REPLACE---\n";
         auto global_st = globalRegion.sym_tbl;
-        // Divide sub regions
+
+        // !!! Main pipeline is here
         auto divided = TrivialRegionDivider(std::move(globalRegion));
         auto masked = TrivialRegionMasker(std::move(divided));
         auto combined = RegionCollector(std::move(masked));

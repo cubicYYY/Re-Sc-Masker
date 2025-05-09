@@ -31,17 +31,21 @@ public:
         std::unordered_map<std::string, size_t> var2def;
 
         for (auto &&masked_region : r.regions) {
-            llvm::errs() << "#insts: " << masked_region.insts.size() << "\n";
-            curRegion.insts.emplace_back("//", "---------");
+            region.insts.emplace_back("//", "---------");
             for (auto &&inst : masked_region.insts) {
                 inst.dump();
-                if (inst.op == "=") {
+                if (inst.op == "=") {  // a move-assignment is found
                     llvm::errs() << "//=\n";
                     auto real_lhs_i = find_n_update(r.alias_edge, inst.lhs.name);
                     if (real_lhs_i != r.alias_edge.end()) {
                         r.alias_edge[inst.res.name] = real_lhs_i->second;
                     }
-                    curRegion.insts.emplace_back(std::move(inst));
+                    region.insts.emplace_back(std::move(inst));
+                    continue;
+                }
+
+                if (inst.op != "^") {  // Ignore non-XOR instruction in swapping
+                    region.insts.emplace_back(std::move(inst));
                     continue;
                 }
 
@@ -71,16 +75,16 @@ public:
 
                 // Not def or use: change nothing
                 if (!is_def && !is_lhs_used && !is_rhs_used) {
-                    curRegion.insts.emplace_back(std::move(inst));
+                    region.insts.emplace_back(std::move(inst));
                     continue;
                 }
 
                 // Def:
                 if (is_def) {
                     llvm::errs() << "// def found: " << res << "\n";
-                    var2def[res] = curRegion.insts.size();
+                    var2def[res] = region.insts.size();
 
-                    curRegion.insts.emplace_back(std::move(inst));
+                    region.insts.emplace_back(std::move(inst));
                     continue;
                 }
 
@@ -88,10 +92,10 @@ public:
                 if (is_lhs_used) {  // lhs is the output var: replace the rhs (random var)
                     llvm::errs() << "// lhs use found: " << real_lhs << "\n";
                     if (!xor_diff.count(real_lhs)) {  // first use: swapping
-                        const Instruction &def_inst_ref = curRegion.insts[var2def[real_lhs]];
+                        const Instruction &def_inst_ref = region.insts[var2def[real_lhs]];
                         xor_diff[real_lhs] = {real_rhs, def_inst_ref.rhs.name};
-                        curRegion.insts.emplace_back("^", inst.res, inst.lhs, def_inst_ref.rhs);
-                        curRegion.insts[var2def[real_lhs]].rhs = inst.rhs;  // replace the RAND var used in def
+                        region.insts.emplace_back("^", inst.res, inst.lhs, def_inst_ref.rhs);
+                        region.insts[var2def[real_lhs]].rhs = inst.rhs;  // replace the RAND var used in def
                         continue;
                     }
                     // If the swapping process have been perform on a var, we need to take the swapped RND var into
@@ -110,13 +114,13 @@ public:
                     // of xor_diff[X]==2
                     const auto &diff = xor_diff[real_lhs];
                     assert(diff.size() == 2);
-                    curRegion.insts.emplace_back("//", "{replaced(" + real_lhs + "):");
-                    curRegion.insts.emplace_back(inst);
+                    region.insts.emplace_back("//", "{replaced(" + real_lhs + "):");
+                    region.insts.emplace_back(inst);
                     for (const auto &d : diff) {
-                        curRegion.insts.emplace_back("^", inst.res, inst.res,
-                                                     ValueInfo{std::string_view(d), 1, VProp::RND, nullptr});
+                        region.insts.emplace_back("^", inst.res, inst.res,
+                                                  ValueInfo{std::string_view(d), 1, VProp::RND, nullptr});
                     }
-                    curRegion.insts.emplace_back("//", ":replaced}");
+                    region.insts.emplace_back("//", ":replaced}");
 
                     continue;
                 }
@@ -124,55 +128,55 @@ public:
                 if (is_rhs_used) {  // rhs is the output var: replace the lhs (random var)
                     llvm::errs() << "// rhs use found: " << real_rhs << "\n";
                     if (!xor_diff.count(real_rhs)) {  // first use: just swap the RND var
-                        const Instruction &def_inst_ref = curRegion.insts[var2def[real_rhs]];
+                        const Instruction &def_inst_ref = region.insts[var2def[real_rhs]];
                         xor_diff[real_rhs] = {real_lhs, def_inst_ref.rhs.name};
-                        curRegion.insts.emplace_back("^", inst.res, def_inst_ref.lhs, inst.rhs);
-                        curRegion.insts[var2def[real_rhs]].lhs = inst.lhs;
+                        region.insts.emplace_back("^", inst.res, def_inst_ref.lhs, inst.rhs);
+                        region.insts[var2def[real_rhs]].lhs = inst.lhs;
                         continue;
                     }
 
                     const auto &diff = xor_diff[real_rhs];
                     assert(diff.size() == 2);
 
-                    curRegion.insts.emplace_back("//", "{replaced(" + real_rhs + "):");
-                    curRegion.insts.emplace_back(inst);  // do not move it: still in use
+                    region.insts.emplace_back("//", "{replaced(" + real_rhs + "):");
+                    region.insts.emplace_back(inst);  // do not move it: still in use
                     for (const auto &d : diff) {
-                        curRegion.insts.emplace_back("^", inst.res, inst.res, ValueInfo{d, 1, VProp::RND, nullptr});
+                        region.insts.emplace_back("^", inst.res, inst.res, ValueInfo{d, 1, VProp::RND, nullptr});
                     }
-                    curRegion.insts.emplace_back("//", ":replaced}");
+                    region.insts.emplace_back("//", ":replaced}");
 
                     continue;
                 }
 
                 // Default:　do not change the instruction
-                curRegion.insts.emplace_back(std::move(inst));
+                region.insts.emplace_back(std::move(inst));
             }
-            curRegion.sym_tbl.insert(std::make_move_iterator(masked_region.sym_tbl.begin()),
-                                     std::make_move_iterator(masked_region.sym_tbl.end()));
+            region.sym_tbl.insert(std::make_move_iterator(masked_region.sym_tbl.begin()),
+                                  std::make_move_iterator(masked_region.sym_tbl.end()));
         }
 
         llvm::errs() << "GLOBAL SYM TBL:\n";
-        for (const auto &gsym : r.global_sym_tbl) {
-            llvm::errs() << gsym.first << ";\n";
+        for (const auto &[vname, vinfo] : r.global_sym_tbl) {
+            llvm::errs() << vname << vinfo.toString() << "\n";
         }
 
-        curRegion.sym_tbl.insert(std::make_move_iterator(r.global_sym_tbl.begin()),
-                                 std::make_move_iterator(r.global_sym_tbl.end()));
+        region.sym_tbl.insert(std::make_move_iterator(r.global_sym_tbl.begin()),
+                              std::make_move_iterator(r.global_sym_tbl.end()));
     }
 
     void printAsCode(std::string_view func_name, ValueInfo return_var,
                      std::vector<std::string> original_fparams) const {
-        std::vector<ValueInfo> tempVars;
+        std::vector<ValueInfo> temp_vars;
         llvm::errs() << "\n=====RESULT====="
                      << "\n";
         // func decl
         llvm::outs() << "bool " << func_name << "(";
-        bool isFirstParam = true;
+        bool is_first_param = true;
 
         // Find all params declared in the function signature...
         for (const auto &vname : original_fparams) {
-            if (isFirstParam) {
-                isFirstParam = false;
+            if (is_first_param) {
+                is_first_param = false;
             } else {
                 llvm::outs() << ",";
             }
@@ -180,21 +184,21 @@ public:
         }
 
         // ...and those random variables introduced by us
-        for (const auto &[vname, vinfo] : curRegion.sym_tbl) {
+        for (const auto &[vname, vinfo] : region.sym_tbl) {
             // Ignore those variables printed in func head
             if (std::count(original_fparams.begin(), original_fparams.end(), vinfo.name)) {
                 continue;
             }
             // Find all params declared in the function signature
             if (vinfo.prop == VProp::RND) {
-                if (isFirstParam) {
-                    isFirstParam = false;
+                if (is_first_param) {
+                    is_first_param = false;
                 } else {
                     llvm::outs() << ",";
                 }
                 llvm::outs() << "bool " << vinfo.name << "=0";
             } else {
-                tempVars.emplace_back(vinfo);
+                temp_vars.emplace_back(vinfo);
             }
         }
         llvm::outs() << ")";
@@ -203,12 +207,12 @@ public:
         llvm::outs() << "{\n";
 
         // local variable decl
-        for (const auto &tempVar : tempVars) {
-            llvm::outs() << "bool " << tempVar.name << ";\n";
+        for (const auto &var : temp_vars) {
+            llvm::outs() << "bool " << var.name << ";\n";
         }
 
         // insts
-        for (const auto &instruction : curRegion.insts) {
+        for (const auto &instruction : region.insts) {
             llvm::outs() << instruction.toString() << "\n";
         }
         llvm::outs() << "return " << return_var.name << ";\n";
@@ -216,5 +220,5 @@ public:
     }
 
 public:
-    Region curRegion;
+    Region region;
 };

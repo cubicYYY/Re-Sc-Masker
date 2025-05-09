@@ -126,6 +126,16 @@ public:
 
     bool isNone() const { return width == 0 && prop == VProp::UNK && clangDecl == nullptr; }
 
+    std::string toString() const {
+        std::ostringstream oss;
+        oss << "{Name: " << name << ", Width: " << width << ", Prop: " << ::toString(prop)
+            << ", ClangDecl: " << (clangDecl ? "Valid" : "Null") << "}";
+        if (clangDecl) {
+            clangDecl->dump();
+        }
+        return oss.str();
+    }
+
 public:
     std::string name;
     Width width;
@@ -194,6 +204,9 @@ public:
         if (op == "/var=>z3/") {
             return res.name + " = " + lhs.name + " & (1 << " + rhs.name + ")" + "; // <=";
         }
+        if (op == "/clear/") {
+            return res.name + " = 0; // <=0";
+        }
         if (op == "=") {
             return res.name + " = " + lhs.name + ";";
         }
@@ -254,27 +267,14 @@ public:
 
         // Dump symbol table
         llvm::errs() << "Symbol Table:\n";
-        for (const auto &entry : sym_tbl) {
-            const auto &name = entry.first;
-            const auto &valueInfo = entry.second;
-            llvm::errs() << "  " << name << ": " << valueInfoToString(valueInfo) << "\n";
+        for (const auto &[vname, vinfo] : sym_tbl) {
+            llvm::errs() << "  " << vname << ": " << vinfo.toString() << "\n";
         }
 
         llvm::errs() << "#insts= " << count() << "\n";
     }
 
     inline static Region getNullRegion() { return Region(); }
-
-private:
-    std::string valueInfoToString(const ValueInfo &val) const {
-        std::ostringstream oss;
-        oss << "{Name: " << val.name << ", Width: " << val.width << ", Prop: " << toString(val.prop)
-            << ", ClangDecl: " << (val.clangDecl ? "Valid" : "Null") << "}";
-        if (val.clangDecl) {
-            val.clangDecl->dump();
-        }
-        return oss.str();
-    }
 
 public:
     std::vector<Instruction> insts;
