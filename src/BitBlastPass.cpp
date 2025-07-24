@@ -175,7 +175,7 @@ void Z3BitBlastPass::splitVar2Bits(const ValueInfo &var) {
     var_splited.insert(var);
 }
 
-Z3VInfo Z3BitBlastPass::traverseZ3Model(const z3::expr &e, int depth) {
+Z3VInfo Z3BitBlastPass::traverseZ3Model(const z3::expr &e, TraversingState state, int depth) {
     // utils
     auto name_to_z3id = [](std::string str) {  // e.g. "k!3" -> 3
         size_t pos = str.find('!');
@@ -213,19 +213,19 @@ Z3VInfo Z3BitBlastPass::traverseZ3Model(const z3::expr &e, int depth) {
         return "<Unknown OP" + opname + ">";
     };
 
-    for (auto i = 0; i < depth * 4; i++) {  // debug output
+    for (auto i = 0; i < depth * 4; i++) {  // indents for debug output
         llvm::errs() << (i % 4 ? "-" : "|");
     }
 
     if (e.is_var()) {
         llvm::errs() << "var: " << e.to_string() << "\n";
         return Z3VInfo(e.to_string(), Z3VType::Other);
-    } else if (e.is_const()) {
+    } else if (e.is_const()) {  // a Z3 var
         llvm::errs() << "const: " << e.to_string() << "\n";
         auto potential_varbit = id2varbit.find(name_to_z3id(e.to_string()));
-        if (potential_varbit != id2varbit.end()) {
+        if (potential_varbit != id2varbit.end()) {  // this Z3 var corresponds to a var in the region
             auto varbit_name = potential_varbit->second;
-            llvm::errs() << "c-tid: " << e.to_string() << " - " << var2topo[varbit_name2varname(varbit_name)] << "\n";
+            llvm::errs() << "topo id: " << e.to_string() << " - " << var2topo[varbit_name2varname(varbit_name)] << "\n";
             return Z3VInfo(varbit_name, Z3VType::Other, var2topo[varbit_name2varname(varbit_name)]);
         }
         return Z3VInfo(e.to_string(), Z3VType::Other);
@@ -234,16 +234,12 @@ Z3VInfo Z3BitBlastPass::traverseZ3Model(const z3::expr &e, int depth) {
         // auto width = e.arg(0).get_sort().bv_size();
         Width width = 1;
 
-        auto oprand = traverseZ3Model(e.arg(0), depth + 1);
+        auto oprand = traverseZ3Model(e.arg(0), state, depth + 1);
 
-        if (depth == 1) {  // Rewrite `not (v==expr)` to `v=!expr;`
+        if (depth == 1) {  //! top-level NOT: rewrite `not (v==expr)` to `v=!expr;`
             auto &last_inst = blasted_region.insts.back();
-            assert(last_inst.op == "=" && "NOT should always come after an equivalence (move-assignment)");
-            // llvm::errs() << "BEFORE:";
-            // last_inst.dump();
+            assert(last_inst.op == "=" && "top-level NOT should always come after an equivalence (move-assignment)");
             last_inst.op = (width == 1 ? "!" : "~");
-            // llvm::errs() << "AFTER:";
-            // last_inst.dump();
             return Z3VInfo(last_inst.res.name, Z3VType::Other);
         }
 
@@ -258,7 +254,7 @@ Z3VInfo Z3BitBlastPass::traverseZ3Model(const z3::expr &e, int depth) {
                                           ValueInfo{oprand.name, width, VProp::UNK, nullptr}, ValueInfo{});
 
         return Z3VInfo(temp_name, Z3VType::Other);
-    } else if (e.is_app()) {
+    } else if (e.is_app()) {  // operators like "="
         auto decl = e.decl();
         std::string name;
 
@@ -268,35 +264,38 @@ Z3VInfo Z3BitBlastPass::traverseZ3Model(const z3::expr &e, int depth) {
             name = "non-string-symbol";
         }
 
-        // find: z3 var -> var#bit
+        // find: Z3 var -> var#bit
         if (name == "=" && depth == 1 && e.num_args() == 2 &&
             (e.arg(0).is_const() || e.arg(1).is_const())) {  // This is an potential aliasing!
+
+            /// Z3 var internal id
             int alias_id;
-            std::string origin_name;
-            if (e.arg(0).is_const() && e.arg(0).decl().name().kind() == Z3_STRING_SYMBOL) {  // rhs
+            std::string varbit_name;
+            if (e.arg(0).is_const() &&
+                e.arg(0).decl().name().kind() == Z3_STRING_SYMBOL) {  // lhs is Z3 var, rhs is varbit
                 alias_id = e.arg(1).decl().name().to_int();
-                origin_name = e.arg(0).decl().name().str();
-            } else if (e.arg(1).is_const() && e.arg(1).decl().name().kind() == Z3_STRING_SYMBOL) {  // lhs
+                varbit_name = e.arg(0).decl().name().str();
+            } else if (e.arg(1).is_const() &&
+                       e.arg(1).decl().name().kind() == Z3_STRING_SYMBOL) {  // rhs is Z3 var. lhs is varbit
                 alias_id = e.arg(0).decl().name().to_int();
-                origin_name = e.arg(1).decl().name().str();
+                varbit_name = e.arg(1).decl().name().str();
             } else {
                 alias_id = -1;
             }
-
-            if (alias_id != -1) {
-                auto origin_var = origin_name.substr(0, origin_name.find('#'));
+            if (alias_id != -1) {  // corresponding var#bit found: then save this mapping
+                auto origin_var = varbit_name.substr(0, varbit_name.find('#'));
                 assert(blasted_region.sym_tbl.count(origin_var));
                 auto origin_vinfo = blasted_region.sym_tbl[origin_var];
 
-                id2varbit[alias_id] = origin_name;
-                blasted_region.insts.emplace_back("//", origin_name + " -> " + std::to_string(alias_id));
-                varbit2id[origin_name] = alias_id;
-                id2topo[alias_id] = var2topo[origin_name];
+                id2varbit[alias_id] = varbit_name;
+                blasted_region.insts.emplace_back("//", varbit_name + " -> " + std::to_string(alias_id));
+                varbit2id[varbit_name] = alias_id;
+                id2topo[alias_id] = var2topo[varbit_name];
 
-                llvm::errs() << "alias_of[" << alias_id << "] = " << origin_name << "\n";
+                llvm::errs() << "id2varbit[" << alias_id << "] = " << varbit_name << "\n";
 
-                // The property of the alias is the same as the origin variable
-                blasted_region.sym_tbl[origin_name] = ValueInfo{origin_name, 1, origin_vinfo.prop, nullptr};
+                // The property of the Z3 var is the same as the origin variable
+                blasted_region.sym_tbl[varbit_name] = ValueInfo{varbit_name, 1, origin_vinfo.prop, nullptr};
                 return Z3VInfo{"!ALIAS", Z3VType::Other};
             }
         }
@@ -304,105 +303,125 @@ Z3VInfo Z3BitBlastPass::traverseZ3Model(const z3::expr &e, int depth) {
         llvm::errs() << "app: " << name << "\n";
         Z3VInfo prev;
         if (name == "=" || name == "and" || name == "or") {
-            if (name == "and" && depth == 0) {
+            if (name == "and" && depth == 0) {  // all expressions are undr a top level "and"
                 for (unsigned i = 0; i < e.num_args(); i++) {
-                    traverseZ3Model(e.arg(i), 1);
+                    traverseZ3Model(e.arg(i), state, 1);
                 }
                 return Z3VInfo();
             }
 
-            // Replace `==` expressions corresponding to assignments
-            // e.g.:
-            // lhs==rhs -> lhs=rhs / rhs=lhs
-            // !(lhs==rhs) => lhs=!rhs / rhs!=lhs
-            // FIXME: we need to ensure that this only cover top-level `==`, and top-level `~` with `==` child node
-            if (name == "=" && (depth == 1 || depth == 2)) {
-                assert(e.num_args() == 2 && "Wrong arg count for top-level `==` op.");
-                auto lhs = traverseZ3Model(e.arg(0), depth + 1);
-                auto rhs = traverseZ3Model(e.arg(1), depth + 1);
-                auto temp_name = Z3VInfo::getNewName();
-                Width width = 1;
+            if (name == "=") {
+                if (!(state & NEED_EXPRESSION)) {
+                    // Replace `==` expressions corresponding to assignments
+                    // e.g.:
+                    // lhs==rhs -> lhs=rhs / rhs=lhs
+                    // !(lhs==rhs) => lhs=!rhs / rhs!=lhs
+                    assert(e.num_args() == 2 && "Wrong arg count for top-level `==` op.");
+                    // No more assignments(statements) inside lower layers
+                    auto lhs = traverseZ3Model(e.arg(0), state | NEED_EXPRESSION, depth + 1);
+                    auto rhs = traverseZ3Model(e.arg(1), state | NEED_EXPRESSION, depth + 1);
+                    auto temp_name = Z3VInfo::getNewName();
+                    Width width = 1;
 
-                // Determine assignment direction based on variable properties
-                bool lhs_in_st = blasted_region.sym_tbl.find(lhs.name) != blasted_region.sym_tbl.end();
-                if (lhs_in_st) {
-                    auto lhs_prop = blasted_region.sym_tbl[lhs.name].prop;
-                    if (lhs_prop == VProp::RND || lhs_prop == VProp::SECRET ||
-                        lhs_prop == VProp::PUB ||  // FIXME: add a "read-only" property?
-                        lhs.topo_id < rhs.topo_id) {
-                        // If LHS is input type, RHS should be assigned LHS value
-                        blasted_region.insts.emplace_back("//", "(L)eq2assign: l=" + lhs.name + "." +
-                                                                    std::to_string(lhs.topo_id) + " r=" + rhs.name +
-                                                                    "." + std::to_string(rhs.topo_id));
-                        blasted_region.insts.emplace_back("=", ValueInfo{rhs.name, width, VProp::UNK, nullptr},
-                                                          ValueInfo{lhs.name, width, VProp::UNK, nullptr}, ValueInfo{});
-                        return Z3VInfo(temp_name, Z3VType::Other);
+                    // Determine assignment direction based on variable properties
+                    bool lhs_in_st = blasted_region.sym_tbl.find(lhs.name) != blasted_region.sym_tbl.end();
+                    if (lhs_in_st) {
+                        auto lhs_prop = blasted_region.sym_tbl[lhs.name].prop;
+                        if (lhs_prop == VProp::RND || lhs_prop == VProp::SECRET ||
+                            lhs_prop == VProp::PUB ||  // FIXME: add a "read-only" property?
+                            lhs.topo_id < rhs.topo_id) {
+                            // If LHS is input type, RHS should be assigned LHS value
+                            blasted_region.insts.emplace_back("//", "(L)eq2assign: l=" + lhs.name + "." +
+                                                                        std::to_string(lhs.topo_id) + " r=" + rhs.name +
+                                                                        "." + std::to_string(rhs.topo_id));
+                            blasted_region.insts.emplace_back("=", ValueInfo{rhs.name, width, VProp::UNK, nullptr},
+                                                              ValueInfo{lhs.name, width, VProp::UNK, nullptr},
+                                                              ValueInfo{});
+                            return Z3VInfo(temp_name, Z3VType::Other);
+                        }
                     }
-                }
 
-                bool rhs_in_st = blasted_region.sym_tbl.find(rhs.name) != blasted_region.sym_tbl.end();
-                if (rhs_in_st) {
-                    auto rhs_prop = blasted_region.sym_tbl[rhs.name].prop;
-                    if (rhs_prop == VProp::RND || rhs_prop == VProp::SECRET || rhs_prop == VProp::PUB ||
-                        lhs.topo_id > rhs.topo_id) {
-                        // If LHS not defined but RHS exists, assign RHS to LHS
-                        blasted_region.insts.emplace_back("//", "(R)eq2assign: l=" + lhs.name + "." +
+                    bool rhs_in_st = (blasted_region.sym_tbl.find(rhs.name) != blasted_region.sym_tbl.end());
+                    if (rhs_in_st) {
+                        auto rhs_prop = blasted_region.sym_tbl[rhs.name].prop;
+                        if (rhs_prop == VProp::RND || rhs_prop == VProp::SECRET || rhs_prop == VProp::PUB ||
+                            lhs.topo_id > rhs.topo_id) {
+                            // If LHS not defined but RHS exists, assign RHS to LHS
+                            blasted_region.insts.emplace_back("//", "(R)eq2assign: l=" + lhs.name + "." +
+                                                                        std::to_string(lhs.topo_id) + " r=" + rhs.name +
+                                                                        "." + std::to_string(rhs.topo_id));
+                            blasted_region.insts.emplace_back("=", ValueInfo{lhs.name, width, VProp::UNK, nullptr},
+                                                              ValueInfo{rhs.name, width, VProp::UNK, nullptr},
+                                                              ValueInfo{});
+                            return Z3VInfo(temp_name, Z3VType::Other);
+                        }
+                    }
+
+                    if (lhs.topo_id == rhs.topo_id) {
+                        // If we reach here, we can't determine the correct assignment direction
+                        llvm::errs() << "Warning: Cannot determine assignment direction for " << lhs.name
+                                     << " == " << rhs.name << "\n";
+                        blasted_region.insts.emplace_back("//", "(?)eq2assign: l=" + lhs.name + "." +
                                                                     std::to_string(lhs.topo_id) + " r=" + rhs.name +
                                                                     "." + std::to_string(rhs.topo_id));
+                    }
+
+                    // Check which side has not been defined
+                    if (lhs_in_st || lhs.topo_id > rhs.topo_id) {
                         blasted_region.insts.emplace_back("=", ValueInfo{lhs.name, width, VProp::UNK, nullptr},
                                                           ValueInfo{rhs.name, width, VProp::UNK, nullptr}, ValueInfo{});
                         return Z3VInfo(temp_name, Z3VType::Other);
                     }
-                }
+                    if (rhs_in_st || lhs.topo_id < rhs.topo_id) {
+                        blasted_region.insts.emplace_back("=", ValueInfo{rhs.name, width, VProp::UNK, nullptr},
+                                                          ValueInfo{lhs.name, width, VProp::UNK, nullptr}, ValueInfo{});
+                        return Z3VInfo(temp_name, Z3VType::Other);
+                    }
 
-                // If we reach here, we can't determine the correct assignment direction
-                llvm::errs() << "Warning: Cannot determine assignment direction for " << lhs.name << " == " << rhs.name
-                             << "\n";
-                blasted_region.insts.emplace_back("//", "(?)eq2assign: l=" + lhs.name + "." +
-                                                            std::to_string(lhs.topo_id) + " r=" + rhs.name + "." +
-                                                            std::to_string(rhs.topo_id));
-
-                // Check which side has not been defined
-                if (lhs_in_st) {
-                    blasted_region.insts.emplace_back("=", ValueInfo{lhs.name, width, VProp::UNK, nullptr},
-                                                      ValueInfo{rhs.name, width, VProp::UNK, nullptr}, ValueInfo{});
+                    return Z3VInfo(temp_name, Z3VType::Other);
+                } else {
+                    // A simple equivalence expression
+                    auto lhs = traverseZ3Model(e.arg(0), state, depth + 1);
+                    auto rhs = traverseZ3Model(e.arg(1), state, depth + 1);
+                    blasted_region.insts.emplace_back("//", "== l=" + lhs.name + "." + std::to_string(lhs.topo_id) +
+                                                                " r=" + rhs.name + "." + std::to_string(rhs.topo_id));
+                    auto temp_name = Z3VInfo::getNewName();
+                    Width width = 1;
+                    blasted_region.insts.emplace_back("==", ValueInfo{temp_name, width, VProp::UNK, nullptr},
+                                                      ValueInfo{lhs.name, width, VProp::UNK, nullptr},
+                                                      ValueInfo{rhs.name, width, VProp::UNK, nullptr});
                     return Z3VInfo(temp_name, Z3VType::Other);
                 }
-                if (rhs_in_st) {
-                    blasted_region.insts.emplace_back("=", ValueInfo{rhs.name, width, VProp::UNK, nullptr},
-                                                      ValueInfo{lhs.name, width, VProp::UNK, nullptr}, ValueInfo{});
-                    return Z3VInfo(temp_name, Z3VType::Other);
-                }
-
-                return Z3VInfo(temp_name, Z3VType::Other);
             }
 
             // Handle an operation with multiple oprands
             blasted_region.insts.emplace_back("//",
-                                              "OP " + name + " with " + std::to_string(e.num_args()) + " operands");
+                                              "OP '" + name + "' with " + std::to_string(e.num_args()) + " operands");
             for (unsigned i = 0; i < e.num_args(); i++) {
-                auto child = traverseZ3Model(e.arg(i), depth + 1);
-                blasted_region.insts.emplace_back(
-                    "//", std::to_string(i) + " op " + child.name + " topo=" + std::to_string(child.topo_id));
+                auto child = traverseZ3Model(e.arg(i), state, depth + 1);
+                blasted_region.insts.emplace_back("//", "No." + std::to_string(i) + " oprand: " + child.name +
+                                                            " topo=" + std::to_string(child.topo_id));
                 if (i == 0) {
+                    blasted_region.insts.emplace_back("//", "MOVE:" + child.name);
                     prev = std::move(child);
 
                 } else {
-                    llvm::errs() << "New name: " << name << "\n";
                     auto temp_name = Z3VInfo::getNewName();
+                    llvm::errs() << "New name: " << temp_name << "\n";
                     const Width width = 1;
 
-                    auto new_var = ValueInfo{temp_name, width, VProp::UNK, nullptr};
+                    auto new_var = ValueInfo{temp_name, width, VProp::UNK,
+                                             nullptr};  // !FIXME: we should not assign a new temp var
                     blasted_region.sym_tbl[temp_name] = new_var;
-                    llvm::errs() << "New inst. depth:" << depth << " op" << name << "\n";
+                    llvm::errs() << "New inst. depth:" << depth << " op" << name << " temp_name=" << temp_name << "\n";
                     blasted_region.insts.emplace_back(opname2operator(name, width), new_var,
                                                       ValueInfo{prev.name, width, VProp::UNK, nullptr},
                                                       ValueInfo{child.name, width, VProp::UNK, nullptr});
                     prev = Z3VInfo(temp_name, Z3VType::Other);
-                    llvm::errs() << "prev: " << prev.name << "+=" << child.name << "\n";
+                    llvm::errs() << "prev updated: " << prev.name << " " << name << " " << child.name << "\n";
                 }
             }
-            llvm::errs() << "prev: " << prev.name << "\n";
+            llvm::errs() << "final prev: " << prev.name << "\n";
             return prev;
         } else if (name == "if") {
             // (ite k!7 (not (= k!5 k!4)) k!5)
@@ -410,9 +429,9 @@ Z3VInfo Z3BitBlastPass::traverseZ3Model(const z3::expr &e, int depth) {
             // else_expr: k!5
             // cond_expr: k!7
             // result = (then & !cond) | (else & cond)
-            auto cond_z3 = traverseZ3Model(e.arg(0), depth + 1);
-            auto then_z3 = traverseZ3Model(e.arg(1), depth + 1);
-            auto else_z3 = traverseZ3Model(e.arg(2), depth + 1);
+            auto cond_z3 = traverseZ3Model(e.arg(0), state, depth + 1);
+            auto then_z3 = traverseZ3Model(e.arg(1), state, depth + 1);
+            auto else_z3 = traverseZ3Model(e.arg(2), state, depth + 1);
             const Width width = 1;
             auto then_expr_name = Z3VInfo::getNewName();
             auto else_expr_name = Z3VInfo::getNewName();
@@ -467,10 +486,10 @@ void Z3BitBlastPass::solve_and_extract(const z3::goal &goal) {
 
     llvm::errs() << "------------------\n";
 
-    llvm::errs() << "- Simplified and bit-blasted constraints:\n";
+    llvm::errs() << "- Z3 tree:\n";
     for (unsigned i = 0; i < result.size(); ++i) {
         llvm::errs() << result[i].as_expr().to_string() << "\n";
-        traverseZ3Model(result[i].as_expr());
+        traverseZ3Model(result[i].as_expr(), 0, 0);
     }
 
     // Dump varbit2id

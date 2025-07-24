@@ -31,15 +31,14 @@ public:
         std::unordered_map<std::string, size_t> var2def;
 
         for (auto &&masked_region : r.regions) {
-            region.insts.emplace_back("//", "---------");
             for (auto &&inst : masked_region.insts) {
                 inst.dump();
                 if (inst.op == "=") {  // a move-assignment is found
-                    llvm::errs() << "//=\n";
                     auto real_lhs_i = find_n_update(r.alias_edge, inst.lhs.name);
                     if (real_lhs_i != r.alias_edge.end()) {
                         r.alias_edge[inst.res.name] = real_lhs_i->second;
                     }
+                    llvm::errs() << "//=\n" << inst.toString() << "\n";
                     region.insts.emplace_back(std::move(inst));
                     continue;
                 }
@@ -166,6 +165,11 @@ public:
 
     void printAsCode(std::string_view func_name, ValueInfo return_var,
                      std::vector<std::string> original_fparams) const {
+        const auto vname_regularizer = [](std::string_view var_name) {
+            auto pos = var_name.find('#');
+            return pos == std::string::npos ? std::string(var_name) : std::string(var_name).replace(pos, 1, "_");
+        };
+
         std::vector<ValueInfo> temp_vars;
         llvm::errs() << "\n=====RESULT====="
                      << "\n";
@@ -180,7 +184,7 @@ public:
             } else {
                 llvm::outs() << ",";
             }
-            llvm::outs() << "bool " << vname << "=0";
+            llvm::outs() << "bool " << vname_regularizer(vname) << "=0";
         }
 
         // ...and those random variables introduced by us
@@ -196,7 +200,7 @@ public:
                 } else {
                     llvm::outs() << ",";
                 }
-                llvm::outs() << "bool " << vinfo.name << "=0";
+                llvm::outs() << "bool " << vname_regularizer(vname) << "=0";
             } else {
                 temp_vars.emplace_back(vinfo);
             }
@@ -208,14 +212,14 @@ public:
 
         // local variable decl
         for (const auto &var : temp_vars) {
-            llvm::outs() << "bool " << var.name << ";\n";
+            llvm::outs() << "bool " << vname_regularizer(var.name) << ";\n";
         }
 
         // insts
         for (const auto &instruction : region.insts) {
-            llvm::outs() << instruction.toString() << "\n";
+            llvm::outs() << instruction.toRegularizedString(vname_regularizer) << "\n";
         }
-        llvm::outs() << "return " << return_var.name << ";\n";
+        llvm::outs() << "return " << vname_regularizer(return_var.name) << ";\n";
         llvm::outs() << "}\n";
     }
 

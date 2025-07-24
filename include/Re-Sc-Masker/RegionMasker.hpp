@@ -90,6 +90,8 @@ private:
                       const ValueInfo &b) {
         newInsts.emplace_back(op, t, a, b);
     }
+
+    /// Maske a single instruction, appending masked instruction(s) to the end of the region
     void mask_n_update(Region &r, const Instruction &inst) {
         const auto &A = inst.lhs;
         const auto &B = inst.rhs;
@@ -101,7 +103,7 @@ private:
             return;
         }
         // TRICK: A|B == !( (!A) & (!B) )
-        // need optimization!
+        // Should NOT use this trick to decouple Masker and other components
         if (op == "|" || op == "||") {
             ValueInfo nA(res.name + "ornA", 1, VProp::UNK, nullptr);
             ValueInfo nB(res.name + "ornB", 1, VProp::UNK, nullptr);
@@ -110,6 +112,7 @@ private:
             temp_region.sym_tbl[nA.name] = nA;
             temp_region.sym_tbl[nB.name] = nB;
             temp_region.sym_tbl[andNN.name] = andNN;
+            r.sym_tbl[res.name] = res;
 
             temp_region.insts.emplace_back("!", nA, A, ValueInfo());
             temp_region.insts.emplace_back("!", nB, B, ValueInfo());
@@ -129,7 +132,7 @@ private:
         }
 
         else if (op == "==") {
-            // EQ: T=(A==B)=!(A^B) ->
+            // EQ: T=(A==B) -> T=!(A^B) ->
             // mA=A^r1;
             // mB=B^r2;
             // mT=mA^mB;
@@ -152,6 +155,7 @@ private:
 
             r.sym_tbl[r1.name] = r1;
             r.sym_tbl[r2.name] = r2;
+            r.sym_tbl[r3.name] = r3;
             r.sym_tbl[mA.name] = mA;
             r.sym_tbl[mB.name] = mB;
             r.sym_tbl[mR.name] = mR;
@@ -159,6 +163,7 @@ private:
             r.sym_tbl[T_.name] = T_;
             r.sym_tbl[mC.name] = mC;
             r.sym_tbl[Tr3.name] = Tr3;
+            r.sym_tbl[res.name] = res;
 
             issueNewInst(r.insts, "^", mA, A, r1);
             issueNewInst(r.insts, "^", mB, B, r2);
@@ -191,6 +196,7 @@ private:
             r.sym_tbl[mB.name] = mB;
             r.sym_tbl[mR.name] = mR;
             r.sym_tbl[mT.name] = mT;
+            r.sym_tbl[res.name] = res;
 
             issueNewInst(r.insts, "^", mA, A, r1);
             issueNewInst(r.insts, "^", mB, B, r2);
@@ -214,6 +220,7 @@ private:
             r.sym_tbl[r1.name] = r1;
             r.sym_tbl[mA.name] = mA;
             r.sym_tbl[mT.name] = mT;
+            r.sym_tbl[res.name] = res;
 
             issueNewInst(r.insts, "^", mA, A, r1);
             issueNewInst(r.insts, "!", mT, mA, ValueInfo());
@@ -266,6 +273,7 @@ private:
             r.sym_tbl[tmp4.name] = tmp4;
             r.sym_tbl[tmp5.name] = tmp5;
             r.sym_tbl[tmp6.name] = tmp6;
+            r.sym_tbl[res.name] = res;
 
             // Mask A and B with random values
             issueNewInst(r.insts, "^", mA, A, r1);

@@ -29,11 +29,14 @@ public:
     Region get() override;
 
 private:
+    using TraversingState = uint8_t;
+    static const TraversingState NEED_EXPRESSION = (1 << 0);
+
     void calc_topo(const Region &origin_region);
     /// Encode relationship between separated bits in Z3
     void blast(Instruction &&inst);
     /// Traverse the model to get the representation of output variables
-    Z3VInfo traverseZ3Model(const z3::expr &e, int indent = 0);
+    Z3VInfo traverseZ3Model(const z3::expr &e, TraversingState state, int indent);
     void solve_and_extract(const z3::goal &goal);
     void splitVar2Bits(const ValueInfo &var);
 

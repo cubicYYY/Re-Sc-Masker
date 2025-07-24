@@ -19,7 +19,7 @@ public:
         for (auto &&rio : masked_region.regions_io) {
             // Check all outputs
             // FIXME: we shall not throw all vars into outputs set... only those who will be used afterwards
-            llvm::errs() << "=====Checking outputs:\n";
+            llvm::errs() << "=====outputs:\n";
             for (const auto &out : rio.outs) {
                 llvm::errs() << out.name << ";\n";
             }

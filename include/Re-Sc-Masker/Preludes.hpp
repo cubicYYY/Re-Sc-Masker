@@ -22,7 +22,7 @@ inline std::string toValidVarName(std::string_view str) {
         } else {
             if (str[0] == '!') {
                 result += "_not_";
-            } else if (str[0] == '#') {
+            } else if (str[0] == '_') {
                 result += "_hash_";
             } else {
                 result += '_';
@@ -37,7 +37,7 @@ inline std::string toValidVarName(std::string_view str) {
         } else {
             if (str[i] == '!') {
                 result += "_not_";
-            } else if (str[i] == '#') {
+            } else if (str[i] == '_') {
                 result += "_hash_";
             } else {
                 result += '_';
@@ -218,6 +218,30 @@ public:
             return res.name + " = " + op + lhs.name + ";";
         }
         return res.name + " = " + lhs.name + op + rhs.name + ";";
+    }
+
+    inline std::string toRegularizedString(auto regularizer) const {
+        if (op == "/z3=>var/") {
+            return regularizer(res.name) + " |= " + regularizer(lhs.name) + " << " + regularizer(rhs.name) + "; // =>";
+        }
+        if (op == "/var=>z3/") {
+            return regularizer(res.name) + " = " + regularizer(lhs.name) + " & (1 << " + regularizer(rhs.name) + ")" +
+                   "; // <=";
+        }
+        if (op == "/clear/") {
+            return regularizer(res.name) + " = 0; // <=0";
+        }
+        if (op == "=") {
+            return regularizer(res.name) + " = " + regularizer(lhs.name) + ";";
+        }
+        if (op == "//") {
+            return op + res.name;
+        }
+        if (isUnaryOp()) {
+            // Unary op
+            return regularizer(res.name) + " = " + op + regularizer(lhs.name) + ";";
+        }
+        return regularizer(res.name) + " = " + regularizer(lhs.name) + op + regularizer(rhs.name) + ";";
     }
 
     inline bool isUnaryOp() const { return rhs.isNone(); }

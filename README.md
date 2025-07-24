@@ -14,11 +14,11 @@ sudo apt install llvm llvm-dev clang clang-tools cmake ninja-build
 mkdir build 
 cmake -B build
 cmake --build build
+# Or:
+# cmake --build build --config Debug
 
 # Verify it:
 build/Re-Sc-Masker input/minimum.cpp > output/minimum.cpp
-# Or:
-# cmake --build build --config Debug
 ```
 
 ## Limitations
